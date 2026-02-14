@@ -8,6 +8,7 @@ import { loadSettings } from './store/settingsSlice.js';
 import { resetGame } from './store/gameSlice.js';
 import { logout } from './store/authSlice.js';
 import { loadAllState, saveAllState } from './storage/db.js';
+import { syncDailyActivity } from './utils/syncManager.js';
 import Home from './pages/Home.jsx';
 import Play from './pages/Play.jsx';
 import Stats from './pages/Stats.jsx';
@@ -89,6 +90,9 @@ function AppContent() {
                     if (saved.settings) dispatch(loadSettings(saved.settings));
                 } catch { }
             }
+
+            // Lazy sync: push any offline daily activity entries
+            syncDailyActivity(userId, token).catch(() => { });
         })();
     }, [userId, isAuthenticated, dispatch]);
 

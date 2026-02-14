@@ -7,6 +7,8 @@ import { PUZZLE_LABELS, PUZZLE_DESCRIPTIONS, POINTS_BASE, MAX_HINTS } from '../u
 import { setPuzzle, updateAnswer, useHint, tickTimer, stopTimer, markSolved, markFailed, nextRound, resetGame } from '../store/gameSlice.js';
 import { recordSolve } from '../store/statsSlice.js';
 import { saveAllState } from '../storage/db.js';
+import { saveDailyActivity } from '../storage/activityStore.js';
+import { syncDailyActivity } from '../utils/syncManager.js';
 import NumberMatrixRenderer from '../components/puzzles/NumberMatrixRenderer.jsx';
 import PatternMatchRenderer from '../components/puzzles/PatternMatchRenderer.jsx';
 import SequenceSolverRenderer from '../components/puzzles/SequenceSolverRenderer.jsx';
@@ -150,28 +152,21 @@ export default function Play() {
                 const currentUserId = state?.auth?.user?.id;
                 if (state && currentUserId) {
                     await saveAllState(currentUserId, state.stats, state.settings);
-                    // Sync daily solve to backend
-                    try {
-                        const token = state.auth.token;
-                        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
-                        await fetch(`${apiUrl}/stats/daily`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                                'Authorization': `Bearer ${token}`,
-                            },
-                            body: JSON.stringify({
-                                date: todayDate,
-                                puzzleType: puzzle.type,
-                                points,
-                                timeSeconds: game.timerSeconds,
-                                hintsUsed: game.hintsUsed,
-                                noMistakes: game.hintsUsed === 0,
-                            }),
-                        });
-                    } catch (e) {
-                        console.warn('Backend sync failed (offline?):', e);
-                    }
+
+                    // Save to daily_activity IndexedDB store
+                    await saveDailyActivity(currentUserId, {
+                        date: todayDate,
+                        solved: true,
+                        score: points,
+                        puzzleType: puzzle.type,
+                        timeSeconds: game.timerSeconds,
+                        hintsUsed: game.hintsUsed,
+                        noMistakes: game.hintsUsed === 0,
+                    });
+
+                    // Lazy sync: push unsynced entries to backend
+                    const token = state.auth.token;
+                    await syncDailyActivity(currentUserId, token);
                 }
             }, 500);
         } else {

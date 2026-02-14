@@ -1,13 +1,23 @@
 import { openDB } from 'idb';
 
 const DB_NAME = 'logic-looper';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 async function getDB() {
     return openDB(DB_NAME, DB_VERSION, {
-        upgrade(db) {
+        upgrade(db, oldVersion) {
             if (!db.objectStoreNames.contains('state')) {
                 db.createObjectStore('state');
+            }
+            // v2: add daily_activity store for heatmap data
+            if (oldVersion < 2) {
+                if (!db.objectStoreNames.contains('daily_activity')) {
+                    const store = db.createObjectStore('daily_activity', {
+                        keyPath: ['userId', 'date'],
+                    });
+                    store.createIndex('by_user', 'userId');
+                    store.createIndex('by_synced', ['userId', 'synced']);
+                }
             }
         },
     });

@@ -136,4 +136,49 @@ router.post('/daily', authenticateToken, async (req, res) => {
     }
 });
 
+// POST /api/stats/batch-sync — Batch sync daily scores from client (authenticated)
+router.post('/batch-sync', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { entries } = req.body;
+
+        if (!Array.isArray(entries) || entries.length === 0) {
+            return res.status(400).json({ error: 'entries array is required' });
+        }
+
+        let syncedCount = 0;
+
+        for (const entry of entries) {
+            const { date, puzzleType, points, timeSeconds, hintsUsed, noMistakes } = entry;
+            if (!date || !puzzleType || points === undefined) continue;
+
+            await prisma.dailyScore.upsert({
+                where: { userId_date: { userId, date } },
+                create: {
+                    userId,
+                    date,
+                    puzzleType,
+                    points,
+                    timeSeconds: timeSeconds || 0,
+                    hintsUsed: hintsUsed || 0,
+                    noMistakes: noMistakes || false,
+                },
+                update: {
+                    puzzleType,
+                    points,
+                    timeSeconds: timeSeconds || 0,
+                    hintsUsed: hintsUsed || 0,
+                    noMistakes: noMistakes || false,
+                },
+            });
+            syncedCount++;
+        }
+
+        res.json({ message: 'Batch sync complete', synced: syncedCount });
+    } catch (err) {
+        console.error('Batch sync error:', err);
+        res.status(500).json({ error: 'Failed to batch sync' });
+    }
+});
+
 export default router;

@@ -746,53 +746,151 @@ body::before {
 .heatmap-container {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+}
+
+.heatmap-body {
+  display: flex;
+  gap: 4px;
+}
+
+.heatmap-day-labels {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-right: 4px;
+}
+
+.heatmap-day-label {
+  height: 13px;
+  display: flex;
+  align-items: center;
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  min-width: 28px;
+  text-align: right;
 }
 
 .heatmap-grid {
   display: grid;
-  grid-template-columns: repeat(52, 1fr);
+  grid-template-rows: repeat(7, 1fr);
+  grid-auto-flow: column;
   gap: 2px;
+  flex: 1;
+}
+
+.heatmap-cell-wrapper {
+  position: relative;
 }
 
 .heatmap-cell {
-  aspect-ratio: 1;
+  width: 13px;
+  height: 13px;
   border-radius: 2px;
-  min-width: 10px;
-  transition: all 0.2s ease;
+  transition: transform 0.15s ease;
+  cursor: pointer;
 }
 
 .heatmap-cell:hover {
-  transform: scale(1.5);
+  transform: scale(1.6);
   z-index: 10;
 }
 
-/* Heatmap: dark surface (empty) → brand purple (fully active) */
-.heatmap-level-0 {
-  background: var(--bg-glass);
+.heatmap-cell-empty {
+  width: 13px;
+  height: 13px;
 }
 
-.heatmap-level-1 {
-  background: rgba(119, 82, 254, 0.2);
+/* Tooltip */
+.heatmap-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  min-width: 130px;
+  pointer-events: none;
+  z-index: 100;
+  box-shadow: var(--shadow-md);
 }
 
-.heatmap-level-2 {
-  background: rgba(119, 82, 254, 0.4);
-}
-
-.heatmap-level-3 {
-  background: rgba(119, 82, 254, 0.65);
-}
-
-.heatmap-level-4 {
-  background: #7752FE;
-}
-
-.heatmap-months {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
+.heatmap-tooltip-date {
   font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 4px;
+}
+
+.heatmap-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.65rem;
   color: var(--text-muted);
+  padding: 1px 0;
+}
+
+.heatmap-tooltip-row strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Month labels row */
+.heatmap-month-row {
+  display: flex;
+  gap: 0;
+  position: relative;
+  height: 16px;
+}
+
+.heatmap-month-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  position: absolute;
+}
+
+/* Legend */
+.heatmap-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+  padding-top: 4px;
+}
+
+.heatmap-legend-text {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.heatmap-legend-cell {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+}
+
+/* Pulse animation for today's solved cell */
+@keyframes heatmap-pulse {
+
+  0%,
+  100% {
+    box-shadow: 0 0 0px #0AC4E0;
+    transform: scale(1);
+  }
+
+  50% {
+    box-shadow: 0 0 12px #0AC4E0;
+    transform: scale(1.4);
+  }
 }
 
 /* ========== STREAK ========== */
