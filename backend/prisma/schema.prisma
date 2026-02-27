@@ -8,52 +8,48 @@ datasource db {
 }
 
 model User {
-  id          String   @id @default(uuid())
-  type        String   @default("guest")  // "guest" | "registered" | "google" | "truecaller"
+  id          String       @id @default(uuid())
+  type        String       @default("guest")
   displayName String?
-  email       String?  @unique
+  email       String?      @unique
   password    String?
+  googleId    String?      @unique
+  truecallerId String?     @unique
   avatarUrl   String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  stats       UserStats?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
   dailyScores DailyScore[]
+  stats       UserStats?
 }
 
 model UserStats {
   id            String   @id @default(uuid())
   userId        String   @unique
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   currentStreak Int      @default(0)
   longestStreak Int      @default(0)
   totalSolved   Int      @default(0)
   totalPoints   Int      @default(0)
-  averageTime   Int      @default(0)   // in seconds
-  fastestSolve  Int?                    // in seconds
+  averageTime   Int      @default(0)
+  fastestSolve  Int?
   lastSolveDate String?
-
   solvedTypes   String[] @default([])
   achievements  String[] @default([])
-
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model DailyScore {
-  id         String   @id @default(uuid())
-  userId     String
-  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  date       String                    // "YYYY-MM-DD"
-  puzzleType String
-  points     Int
+  id          String   @id @default(uuid())
+  userId      String
+  date        String
+  puzzleType  String
+  points      Int
   timeSeconds Int
-  hintsUsed  Int      @default(0)
-  noMistakes Boolean  @default(false)
-
-  createdAt  DateTime @default(now())
+  hintsUsed   Int      @default(0)
+  noMistakes  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, date])
   @@index([date])

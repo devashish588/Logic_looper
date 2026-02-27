@@ -20,3 +20,10 @@ backend/prisma/*.db
 
 # Build
 *.tsbuildinfo
+
+# Lint / debug artifacts
+*.log
+lint_*.txt
+
+# Vercel
+.vercel

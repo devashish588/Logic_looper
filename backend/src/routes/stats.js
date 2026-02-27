@@ -63,15 +63,13 @@ router.get('/:userId', authenticateToken, async (req, res) => {
             return res.status(403).json({ error: 'Forbidden' });
         }
 
-        const userStats = await prisma.userStats.findUnique({
-            where: { userId },
-        });
-
-        // Also fetch daily scores to rebuild heatmap
-        const dailyScores = await prisma.dailyScore.findMany({
-            where: { userId },
-            orderBy: { date: 'asc' },
-        });
+        const [userStats, dailyScores] = await Promise.all([
+            prisma.userStats.findUnique({ where: { userId } }),
+            prisma.dailyScore.findMany({
+                where: { userId },
+                orderBy: { date: 'asc' },
+            }),
+        ]);
 
         const heatmapData = {};
         dailyScores.forEach(s => {
@@ -106,6 +104,18 @@ router.post('/daily', authenticateToken, async (req, res) => {
 
         if (!date || !puzzleType || points === undefined) {
             return res.status(400).json({ error: 'date, puzzleType, and points are required' });
+        }
+
+        // Validation guards
+        const today = new Date().toISOString().slice(0, 10);
+        if (date > today) {
+            return res.status(400).json({ error: 'Future dates are not allowed' });
+        }
+        if (typeof points !== 'number' || points < 0 || points > 200) {
+            return res.status(400).json({ error: 'Points must be between 0 and 200' });
+        }
+        if (timeSeconds !== undefined && (timeSeconds < 0 || timeSeconds > 3600)) {
+            return res.status(400).json({ error: 'Time must be between 0 and 3600 seconds' });
         }
 
         // Upsert daily score (one solve per day per user)
@@ -147,10 +157,16 @@ router.post('/batch-sync', authenticateToken, async (req, res) => {
         }
 
         let syncedCount = 0;
+        const today = new Date().toISOString().slice(0, 10);
 
         for (const entry of entries) {
             const { date, puzzleType, points, timeSeconds, hintsUsed, noMistakes } = entry;
             if (!date || !puzzleType || points === undefined) continue;
+
+            // Validation: skip invalid entries
+            if (date > today) continue;
+            if (typeof points !== 'number' || points < 0 || points > 200) continue;
+            if (timeSeconds !== undefined && (timeSeconds < 0 || timeSeconds > 3600)) continue;
 
             await prisma.dailyScore.upsert({
                 where: { userId_date: { userId, date } },
@@ -178,6 +194,33 @@ router.post('/batch-sync', authenticateToken, async (req, res) => {
     } catch (err) {
         console.error('Batch sync error:', err);
         res.status(500).json({ error: 'Failed to batch sync' });
+    }
+});
+
+// POST /api/stats/achievements — Save an unlocked achievement permanently
+router.post('/achievements', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user.userId;
+        const { achievementId } = req.body;
+
+        if (!achievementId) {
+            return res.status(400).json({ error: 'achievementId is required' });
+        }
+
+        // Add to the achievements array on UserStats (upsert-safe via push)
+        const current = await prisma.userStats.findUnique({ where: { userId } });
+        const existing = current?.achievements || [];
+        if (!existing.includes(achievementId)) {
+            await prisma.userStats.update({
+                where: { userId },
+                data: { achievements: { push: achievementId } },
+            });
+        }
+
+        res.json({ message: 'Achievement saved permanently', achievementId });
+    } catch (err) {
+        console.error('Achievement save error:', err);
+        res.status(500).json({ error: 'Failed to save achievement' });
     }
 });
 

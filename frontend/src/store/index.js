@@ -5,13 +5,12 @@ import settingsReducer from './settingsSlice.js';
 import authReducer from './authSlice.js';
 
 const store = configureStore({
-    reducer: {
-        game: gameReducer,
-        stats: statsReducer,
-        settings: settingsReducer,
-        auth: authReducer,
-    },
+  reducer: {
+    game: gameReducer,
+    stats: statsReducer,
+    settings: settingsReducer,
+    auth: authReducer,
+  },
 });
 
 export default store;
-
