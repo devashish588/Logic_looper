@@ -3,14 +3,19 @@
     "outputDirectory": "frontend/dist",
     "installCommand": "npm install --legacy-peer-deps && cd backend && npm install --legacy-peer-deps && npx prisma generate",
     "framework": null,
+    "functions": {
+        "api/index.js": {
+            "includeFiles": "backend/**"
+        }
+    },
     "rewrites": [
         {
             "source": "/api/(.*)",
-            "destination": "/backend/src/index.js"
+            "destination": "/api"
         },
         {
             "source": "/((?!api/).*)",
-            "destination": "/frontend/dist/index.html"
+            "destination": "/index.html"
         }
     ]
 }
