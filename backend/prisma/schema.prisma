@@ -39,17 +39,25 @@ model UserStats {
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+enum DifficultyLevel {
+  EASY
+  MEDIUM
+  HARD
+}
+
 model DailyScore {
-  id          String   @id @default(uuid())
-  userId      String
-  date        String
-  puzzleType  String
-  points      Int
-  timeSeconds Int
-  hintsUsed   Int      @default(0)
-  noMistakes  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id              String          @id @default(uuid())
+  userId          String
+  date            String
+  puzzleType      String
+  points          Int
+  timeSeconds     Int
+  hintsUsed       Int             @default(0)
+  noMistakes      Boolean         @default(false)
+  difficultyLevel DifficultyLevel @default(EASY)
+  gameType        String          @default("")
+  createdAt       DateTime        @default(now())
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, date])
   @@index([date])

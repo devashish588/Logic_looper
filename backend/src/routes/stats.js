@@ -1,6 +1,7 @@
 import express from 'express';
 import { PrismaClient } from '@prisma/client';
 import { authenticateToken } from '../middleware/authMiddleware.js';
+import { recomputeUserStats } from './statsHelper.js';
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -100,7 +101,7 @@ router.get('/:userId', authenticateToken, async (req, res) => {
 router.post('/daily', authenticateToken, async (req, res) => {
     try {
         const userId = req.user.userId;
-        const { date, puzzleType, points, timeSeconds, hintsUsed, noMistakes } = req.body;
+        const { date, puzzleType, points, timeSeconds, hintsUsed, noMistakes, difficultyLevel, gameType } = req.body;
 
         if (!date || !puzzleType || points === undefined) {
             return res.status(400).json({ error: 'date, puzzleType, and points are required' });
@@ -111,8 +112,8 @@ router.post('/daily', authenticateToken, async (req, res) => {
         if (date > today) {
             return res.status(400).json({ error: 'Future dates are not allowed' });
         }
-        if (typeof points !== 'number' || points < 0 || points > 200) {
-            return res.status(400).json({ error: 'Points must be between 0 and 200' });
+        if (typeof points !== 'number' || points < 0 || points > 500) {
+            return res.status(400).json({ error: 'Points must be between 0 and 500' });
         }
         if (timeSeconds !== undefined && (timeSeconds < 0 || timeSeconds > 3600)) {
             return res.status(400).json({ error: 'Time must be between 0 and 3600 seconds' });
@@ -129,6 +130,8 @@ router.post('/daily', authenticateToken, async (req, res) => {
                 timeSeconds: timeSeconds || 0,
                 hintsUsed: hintsUsed || 0,
                 noMistakes: noMistakes || false,
+                difficultyLevel: difficultyLevel || 'EASY',
+                gameType: gameType || '',
             },
             update: {
                 puzzleType,
@@ -136,8 +139,13 @@ router.post('/daily', authenticateToken, async (req, res) => {
                 timeSeconds: timeSeconds || 0,
                 hintsUsed: hintsUsed || 0,
                 noMistakes: noMistakes || false,
+                difficultyLevel: difficultyLevel || 'EASY',
+                gameType: gameType || '',
             },
         });
+
+        // Recompute aggregate UserStats
+        await recomputeUserStats(prisma, userId);
 
         res.json({ message: 'Daily score recorded', date, points });
     } catch (err) {
@@ -160,12 +168,12 @@ router.post('/batch-sync', authenticateToken, async (req, res) => {
         const today = new Date().toISOString().slice(0, 10);
 
         for (const entry of entries) {
-            const { date, puzzleType, points, timeSeconds, hintsUsed, noMistakes } = entry;
+            const { date, puzzleType, points, timeSeconds, hintsUsed, noMistakes, difficultyLevel, gameType } = entry;
             if (!date || !puzzleType || points === undefined) continue;
 
             // Validation: skip invalid entries
             if (date > today) continue;
-            if (typeof points !== 'number' || points < 0 || points > 200) continue;
+            if (typeof points !== 'number' || points < 0 || points > 500) continue;
             if (timeSeconds !== undefined && (timeSeconds < 0 || timeSeconds > 3600)) continue;
 
             await prisma.dailyScore.upsert({
@@ -178,6 +186,8 @@ router.post('/batch-sync', authenticateToken, async (req, res) => {
                     timeSeconds: timeSeconds || 0,
                     hintsUsed: hintsUsed || 0,
                     noMistakes: noMistakes || false,
+                    difficultyLevel: difficultyLevel || 'EASY',
+                    gameType: gameType || '',
                 },
                 update: {
                     puzzleType,
@@ -185,9 +195,16 @@ router.post('/batch-sync', authenticateToken, async (req, res) => {
                     timeSeconds: timeSeconds || 0,
                     hintsUsed: hintsUsed || 0,
                     noMistakes: noMistakes || false,
+                    difficultyLevel: difficultyLevel || 'EASY',
+                    gameType: gameType || '',
                 },
             });
             syncedCount++;
+        }
+
+        // Recompute aggregate UserStats after all entries are written
+        if (syncedCount > 0) {
+            await recomputeUserStats(prisma, userId);
         }
 
         res.json({ message: 'Batch sync complete', synced: syncedCount });

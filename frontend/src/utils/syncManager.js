@@ -44,6 +44,8 @@ export async function syncDailyActivity(userId, token, { force = false } = {}) {
       timeSeconds: e.timeSeconds || 0,
       hintsUsed: e.hintsUsed || 0,
       noMistakes: e.noMistakes || false,
+      difficultyLevel: e.difficultyLevel || 'EASY',
+      gameType: e.gameType || e.puzzleType || '',
     }));
 
     const res = await fetch(`${apiUrl}/stats/batch-sync`, {

@@ -36,6 +36,7 @@ function buildHeatmapGrid(activityMap) {
       score: entry?.score || 0,
       intensity: entry?.intensity || 0,
       puzzleType: entry?.puzzleType || '',
+      difficultyLevel: entry?.difficultyLevel || '',
       isToday: i === 0,
     });
   }
@@ -190,6 +191,7 @@ function Heatmap({ justSolved }) {
                   score={cell.score}
                   intensity={cell.intensity}
                   puzzleType={cell.puzzleType}
+                  difficultyLevel={cell.difficultyLevel}
                   isToday={cell.isToday}
                   justSolved={justSolved}
                 />

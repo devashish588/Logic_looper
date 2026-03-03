@@ -2230,3 +2230,303 @@ body::before {
     border-width: 1.5px;
   }
 }
+
+/* ========== DIFFICULTY SELECTOR ========== */
+.difficulty-selector {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 20px 0;
+}
+
+.difficulty-header {
+  text-align: center;
+  margin-bottom: 32px;
+}
+
+.difficulty-title {
+  margin-top: 12px;
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.difficulty-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.difficulty-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  position: relative;
+  backdrop-filter: blur(10px);
+}
+
+.difficulty-card:hover {
+  border-color: var(--border-accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-glow);
+}
+
+.difficulty-card.suggested {
+  border-color: var(--accent-primary);
+  box-shadow: var(--shadow-glow);
+}
+
+.difficulty-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.difficulty-card-body {
+  flex: 1;
+}
+
+.difficulty-label {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--text-primary);
+}
+
+.difficulty-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.difficulty-suggested-tag {
+  position: absolute;
+  top: -8px;
+  right: 12px;
+  background: var(--accent-primary);
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ========== TRUTH & LIES ========== */
+.truth-lies-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  padding: 16px 0;
+}
+
+.truth-lies-card {
+  background: var(--bg-card);
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  text-align: center;
+  transition: all 0.3s ease;
+}
+
+.truth-lies-card.role-knight {
+  border-color: var(--accent-success);
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.2);
+}
+
+.truth-lies-card.role-knave {
+  border-color: var(--accent-danger);
+  box-shadow: 0 0 15px rgba(240, 85, 55, 0.2);
+}
+
+.truth-lies-name {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--accent-secondary);
+  margin-bottom: 8px;
+}
+
+.truth-lies-statement {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  font-style: italic;
+  line-height: 1.4;
+}
+
+.truth-lies-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-glass);
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-family: var(--font-sans);
+}
+
+.truth-lies-toggle.knight {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--accent-success);
+  border-color: var(--accent-success);
+}
+
+.truth-lies-toggle.knave {
+  background: rgba(240, 85, 55, 0.15);
+  color: var(--accent-danger);
+  border-color: var(--accent-danger);
+}
+
+/* ========== BINARY BRIDGE ========== */
+.bridge-grid {
+  display: grid;
+  gap: 6px;
+  margin: 20px auto;
+  width: fit-content;
+}
+
+.bridge-cell {
+  width: 52px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-glass);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  color: var(--text-primary);
+}
+
+.bridge-cell:hover {
+  border-color: var(--accent-secondary);
+  transform: scale(1.05);
+}
+
+.bridge-cell.in-path {
+  background: rgba(65, 75, 234, 0.25);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 10px rgba(65, 75, 234, 0.3);
+}
+
+.bridge-cell.start {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: var(--accent-success);
+}
+
+.bridge-cell.end {
+  background: rgba(240, 85, 55, 0.2);
+  border-color: var(--accent-danger);
+}
+
+.bridge-cell.valid-step {
+  border-color: var(--accent-secondary);
+  border-style: dashed;
+}
+
+.bridge-cell-value {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+
+.bridge-cell-order {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 0.55rem;
+  color: var(--accent-primary);
+  font-weight: 700;
+}
+
+/* ========== QUANTUM GRID ========== */
+.quantum-palette {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--bg-glass);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-color);
+}
+
+.quantum-symbol-btn {
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  background: var(--bg-glass);
+  font-size: 1.4rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.quantum-symbol-btn:hover {
+  border-color: var(--accent-secondary);
+  transform: scale(1.1);
+}
+
+.quantum-symbol-btn.active {
+  border-color: var(--accent-primary);
+  background: rgba(65, 75, 234, 0.2);
+  box-shadow: 0 0 12px rgba(65, 75, 234, 0.3);
+}
+
+.quantum-cell {
+  font-size: 1.3rem !important;
+  user-select: none;
+}
+
+/* ========== LEVEL UP ANIMATION ========== */
+.level-up-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(8px);
+  pointer-events: none;
+}
+
+.level-up-badge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 32px 48px;
+  background: var(--gradient-warm);
+  border-radius: var(--radius-xl);
+  color: #fff;
+  box-shadow: 0 0 60px rgba(240, 85, 55, 0.5), 0 0 120px rgba(119, 82, 254, 0.3);
+}
+
+.level-up-text {
+  font-family: 'Poppins', sans-serif;
+  font-size: 2rem;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+}

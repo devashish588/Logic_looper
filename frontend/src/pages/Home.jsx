@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -13,9 +13,44 @@ import { PuzzleIcon, CheckCircle, Flame } from '../components/Icons.jsx';
 export default function Home() {
   const stats = useSelector((state) => state.stats);
   const { user } = useSelector((state) => state.auth);
+  const userId = user?.id;
   const todayDate = getTodayDateString();
   const puzzleType = getPuzzleTypeForDate(todayDate);
   const alreadySolved = stats.heatmapData[todayDate] > 0;
+
+  // Compute streaks from IndexedDB (same as Stats page) for consistency
+  const [streaks, setStreaks] = useState(() => ({
+    currentStreak: stats.currentStreak ?? 0,
+    longestStreak: stats.longestStreak ?? 0,
+  }));
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (userId) {
+        try {
+          const { getDailyActivity } = await import('../storage/activityStore.js');
+          const entries = await getDailyActivity(userId);
+          if (!cancelled && entries.length > 0) {
+            const { calculateStreaks } = await import('../utils/streakCalculator.js');
+            const result = calculateStreaks(entries);
+            setStreaks(result);
+            return;
+          }
+        } catch (e) {
+          console.warn('Failed to compute streaks for Home:', e);
+        }
+      }
+      // Fallback to Redux state
+      if (!cancelled) {
+        setStreaks({
+          currentStreak: stats.currentStreak ?? 0,
+          longestStreak: stats.longestStreak ?? 0,
+        });
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userId, stats.currentStreak, stats.longestStreak, stats.heatmapData]);
 
   return (
     <div>
@@ -97,8 +132,8 @@ export default function Home() {
             className="quick-stat-value"
             style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
           >
-            {stats.currentStreak > 0 && <Flame size={20} strokeWidth={1.5} />}
-            {stats.currentStreak}
+            {streaks.currentStreak > 0 && <Flame size={20} strokeWidth={1.5} />}
+            {streaks.currentStreak}
           </div>
           <div className="quick-stat-label">Current Streak</div>
         </div>
@@ -111,10 +146,11 @@ export default function Home() {
           <div className="quick-stat-label">Total Points</div>
         </div>
         <div className="quick-stat">
-          <div className="quick-stat-value">{stats.longestStreak}</div>
+          <div className="quick-stat-value">{streaks.longestStreak}</div>
           <div className="quick-stat-label">Best Streak</div>
         </div>
       </motion.div>
     </div>
   );
 }
+

@@ -10,6 +10,15 @@ const INTENSITY_COLORS = {
   4: '#414BEA', // More — brand primary blue
 };
 
+// Darker shades for Grandmaster-difficulty wins
+const GRANDMASTER_INTENSITY_COLORS = {
+  0: '#2a2060',
+  1: '#525CEB',
+  2: '#414BEA',
+  3: '#3538C9',
+  4: '#2A2DA8',
+};
+
 const PULSE_COLOR = '#414BEA';
 
 /**
@@ -21,6 +30,7 @@ const HeatmapCell = React.memo(function HeatmapCell({
   score,
   intensity,
   puzzleType,
+  difficultyLevel,
   isToday,
   justSolved,
 }) {
@@ -51,7 +61,9 @@ const HeatmapCell = React.memo(function HeatmapCell({
     });
   }, []);
 
-  const bgColor = INTENSITY_COLORS[intensity] ?? INTENSITY_COLORS[0];
+  const isGrandmaster = difficultyLevel === 'HARD' || difficultyLevel === 'GRANDMASTER';
+  const colorMap = isGrandmaster ? GRANDMASTER_INTENSITY_COLORS : INTENSITY_COLORS;
+  const bgColor = colorMap[intensity] ?? colorMap[0];
 
   const difficultyLabel = puzzleType
     ? puzzleType.replace(/([A-Z])/g, ' $1').trim()
@@ -115,6 +127,21 @@ const HeatmapCell = React.memo(function HeatmapCell({
           <span>Type</span>
           <strong style={{ color: '#fff' }}>{difficultyLabel}</strong>
         </div>
+        {difficultyLevel && difficultyLevel !== 'EASY' && (
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: '12px',
+            fontSize: '0.65rem',
+            color: 'rgba(255,255,255,0.8)',
+            padding: '1px 0',
+          }}>
+            <span>Difficulty</span>
+            <strong style={{ color: isGrandmaster ? '#F05537' : '#fff' }}>
+              {difficultyLevel === 'HARD' ? 'Grandmaster' : difficultyLevel === 'MEDIUM' ? 'Adept' : difficultyLevel}
+            </strong>
+          </div>
+        )}
       </motion.div>
     </AnimatePresence>,
     document.body

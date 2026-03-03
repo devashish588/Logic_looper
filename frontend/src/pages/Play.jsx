@@ -19,7 +19,9 @@ import {
   PUZZLE_LABELS,
   PUZZLE_DESCRIPTIONS,
   POINTS_BASE,
-  MAX_HINTS,
+  DIFFICULTY_LEVELS,
+  GRANDMASTER_TIME_PENALTY_PER_30S,
+  getDifficultyForStreak,
 } from '../utils/constants.js';
 import {
   setPuzzle,
@@ -42,6 +44,9 @@ import PatternMatchRenderer from '../components/puzzles/PatternMatchRenderer.jsx
 import SequenceSolverRenderer from '../components/puzzles/SequenceSolverRenderer.jsx';
 import DeductionGridRenderer from '../components/puzzles/DeductionGridRenderer.jsx';
 import BinaryLogicRenderer from '../components/puzzles/BinaryLogicRenderer.jsx';
+import TruthAndLiesRenderer from '../components/puzzles/TruthAndLiesRenderer.jsx';
+import BinaryBridgeRenderer from '../components/puzzles/BinaryBridgeRenderer.jsx';
+import QuantumGridRenderer from '../components/puzzles/QuantumGridRenderer.jsx';
 import {
   PuzzleIcon,
   Clock,
@@ -51,6 +56,9 @@ import {
   RotateCcw,
   BarChart3,
   ArrowLeft,
+  Zap,
+  Star,
+  Trophy,
 } from '../components/Icons.jsx';
 
 function Confetti() {
@@ -92,6 +100,86 @@ function Confetti() {
   );
 }
 
+/**
+ * Level-Up animation shown when a Grandmaster puzzle is solved.
+ */
+function LevelUpAnimation() {
+  return (
+    <motion.div
+      className="level-up-overlay"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.5 }}
+    >
+      <motion.div
+        className="level-up-badge"
+        initial={{ scale: 0, rotate: -180 }}
+        animate={{ scale: 1, rotate: 0 }}
+        transition={{ type: 'spring', damping: 10, stiffness: 100 }}
+      >
+        <Trophy size={48} strokeWidth={1.5} />
+        <div className="level-up-text">LEVEL UP!</div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+/**
+ * Difficulty Selection Screen
+ */
+function DifficultySelector({ suggestedDifficulty, onSelect, puzzleType }) {
+  const levels = Object.values(DIFFICULTY_LEVELS);
+
+  return (
+    <motion.div
+      className="difficulty-selector"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+    >
+      <div className="difficulty-header">
+        <PuzzleIcon type={puzzleType} size={40} />
+        <h2 className="difficulty-title">{PUZZLE_LABELS[puzzleType]}</h2>
+        <p className="text-muted">{PUZZLE_DESCRIPTIONS[puzzleType]}</p>
+      </div>
+
+      <div className="difficulty-cards">
+        {levels.map((level, i) => (
+          <motion.div
+            key={level.key}
+            className={`difficulty-card ${suggestedDifficulty?.key === level.key ? 'suggested' : ''}`}
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: i * 0.1 }}
+            onClick={() => onSelect(level)}
+          >
+            <div
+              className="difficulty-badge"
+              style={{ backgroundColor: level.color }}
+            >
+              {level.key === 'NOVICE' && <Star size={20} strokeWidth={1.5} />}
+              {level.key === 'ADEPT' && <Zap size={20} strokeWidth={1.5} />}
+              {level.key === 'GRANDMASTER' && <Trophy size={20} strokeWidth={1.5} />}
+            </div>
+            <div className="difficulty-card-body">
+              <div className="difficulty-label">{level.label}</div>
+              <div className="difficulty-meta">
+                {level.hints > 0 ? `${level.hints} hint${level.hints > 1 ? 's' : ''}` : 'No hints'}
+                {' • '}
+                {level.multiplier}x points
+              </div>
+            </div>
+            {suggestedDifficulty?.key === level.key && (
+              <span className="difficulty-suggested-tag">Suggested</span>
+            )}
+          </motion.div>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
 export default function Play() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -101,30 +189,43 @@ export default function Play() {
   const timerRef = useRef(null);
   const [patternAnswers, setPatternAnswers] = useState({});
   const [showConfetti, setShowConfetti] = useState(false);
+  const [showLevelUp, setShowLevelUp] = useState(false);
+  const [selectedDifficulty, setSelectedDifficulty] = useState(null);
+  const [puzzleTypeForDate, setPuzzleTypeForDate] = useState(null);
 
   const todayDate = getTodayDateString();
   const alreadySolved = stats.heatmapData[todayDate] > 0;
 
-  // Reset game state and generate puzzle when user changes or on mount
+  // Auto-suggest difficulty based on streak
+  const suggestedDifficulty = useMemo(
+    () => getDifficultyForStreak(stats.currentStreak),
+    [stats.currentStreak],
+  );
+
+  // Determine puzzle type for today
   useEffect(() => {
+    import('../engine/generator.js').then(({ getPuzzleTypeForDate }) => {
+      setPuzzleTypeForDate(getPuzzleTypeForDate(todayDate));
+    });
+  }, [todayDate]);
+
+  // Generate puzzle when difficulty is selected
+  useEffect(() => {
+    if (!selectedDifficulty || alreadySolved) return;
+
     dispatch(resetGame());
     setPatternAnswers({});
-    if (!alreadySolved) {
-      dispatch(setLoading(true));
-      generatePuzzle(todayDate)
-        .then((puzzle) => {
-          dispatch(setPuzzle(puzzle));
-          // Preload next days after current is loaded
-          preloadUpcomingPuzzles().catch(console.warn);
-        })
-        .finally(() => {
-          dispatch(setLoading(false));
-        });
-    } else {
-      // Preload anyway if already solved
-      preloadUpcomingPuzzles().catch(console.warn);
-    }
-  }, [userId]);
+    dispatch(setLoading(true));
+
+    generatePuzzle(todayDate, selectedDifficulty)
+      .then((puzzle) => {
+        dispatch(setPuzzle(puzzle));
+        preloadUpcomingPuzzles().catch(console.warn);
+      })
+      .finally(() => {
+        dispatch(setLoading(false));
+      });
+  }, [selectedDifficulty, userId]);
 
   // Timer
   useEffect(() => {
@@ -165,11 +266,7 @@ export default function Play() {
 
     switch (puzzle.type) {
       case 'numberMatrix':
-        isCorrect = await validateSolution(
-          'numberMatrix',
-          game.userAnswer,
-          puzzle.solution,
-        );
+        isCorrect = await validateSolution('numberMatrix', game.userAnswer, puzzle.solution);
         break;
       case 'patternMatch':
         isCorrect = await validateSolution('patternMatch', patternAnswers, puzzle);
@@ -178,14 +275,19 @@ export default function Play() {
         isCorrect = await validateSolution('sequenceSolver', game.userAnswer, puzzle);
         break;
       case 'deductionGrid':
-        isCorrect = await validateSolution(
-          'deductionGrid',
-          game.userAnswer,
-          puzzle.solution,
-        );
+        isCorrect = await validateSolution('deductionGrid', game.userAnswer, puzzle.solution);
         break;
       case 'binaryLogic':
         isCorrect = await validateSolution('binaryLogic', game.userAnswer, puzzle);
+        break;
+      case 'truthAndLies':
+        isCorrect = await validateSolution('truthAndLies', game.userAnswer, puzzle);
+        break;
+      case 'binaryBridge':
+        isCorrect = await validateSolution('binaryBridge', game.userAnswer, puzzle);
+        break;
+      case 'quantumGrid':
+        isCorrect = await validateSolution('quantumGrid', game.userAnswer, puzzle);
         break;
     }
 
@@ -195,12 +297,29 @@ export default function Play() {
       setShowConfetti(true);
       setTimeout(() => setShowConfetti(false), 3500);
 
-      const points = Math.max(
+      // Show Level Up animation for Grandmaster
+      if (selectedDifficulty?.key === 'GRANDMASTER') {
+        setShowLevelUp(true);
+        setTimeout(() => setShowLevelUp(false), 3000);
+      }
+
+      // Calculate points with difficulty multiplier and time penalty
+      const diffConfig = selectedDifficulty || DIFFICULTY_LEVELS.NOVICE;
+      let basePoints = Math.max(
         10,
         POINTS_BASE -
         game.hintsUsed * 20 -
         Math.floor(game.timerSeconds / 60) * 5,
       );
+
+      // Grandmaster time penalty
+      if (diffConfig.key === 'GRANDMASTER') {
+        const timePenalty = Math.floor(game.timerSeconds / 30) * GRANDMASTER_TIME_PENALTY_PER_30S;
+        basePoints = Math.max(10, basePoints - timePenalty);
+      }
+
+      const points = Math.round(basePoints * diffConfig.multiplier);
+
       dispatch(
         recordSolve({
           date: todayDate,
@@ -208,6 +327,7 @@ export default function Play() {
           timeSeconds: game.timerSeconds,
           puzzleType: puzzle.type,
           noMistakes: game.hintsUsed === 0,
+          difficultyLevel: diffConfig.dbKey || 'EASY',
         }),
       );
 
@@ -220,7 +340,6 @@ export default function Play() {
         if (state && currentUserId) {
           await saveAllState(currentUserId, state.stats, state.settings);
 
-          // Save to daily_activity IndexedDB store
           const dailyData = {
             date: todayDate,
             solved: true,
@@ -229,13 +348,14 @@ export default function Play() {
             timeSeconds: game.timerSeconds,
             hintsUsed: game.hintsUsed,
             noMistakes: game.hintsUsed === 0,
+            difficultyLevel: diffConfig.dbKey || 'EASY',
+            gameType: puzzle.type,
           };
 
           await saveDailyActivity(currentUserId, dailyData);
 
-          // 1. Immediate Sync to /api/daily-scores (Backend Upsert)
-          const apiUrl =
-            import.meta.env.VITE_API_URL || '/api';
+          // Immediate sync
+          const apiUrl = import.meta.env.VITE_API_URL || '/api';
           try {
             await fetch(`${apiUrl}/daily-scores`, {
               method: 'POST',
@@ -246,13 +366,9 @@ export default function Play() {
               body: JSON.stringify(dailyData),
             });
           } catch (e) {
-            console.warn(
-              'Immediate sync failed, falling back to lazy sync:',
-              e,
-            );
+            console.warn('Immediate sync failed:', e);
           }
 
-          // 2. Lazy sync: push any other unsynced entries to backend
           await syncDailyActivity(currentUserId, token);
         }
       }, 500);
@@ -262,9 +378,9 @@ export default function Play() {
   };
 
   const handleHint = () => {
-    if (game.hintsRemaining <= 0) return;
+    const maxHints = selectedDifficulty?.hints ?? 3;
+    if (game.hintsUsed >= maxHints) return;
     dispatch(useHint());
-    // Hint logic is visual — handled by each renderer
   };
 
   // Already solved today
@@ -288,6 +404,17 @@ export default function Play() {
     );
   }
 
+  // Difficulty selection screen (before puzzle loads)
+  if (!selectedDifficulty && !alreadySolved && puzzleTypeForDate) {
+    return (
+      <DifficultySelector
+        suggestedDifficulty={suggestedDifficulty}
+        onSelect={setSelectedDifficulty}
+        puzzleType={puzzleTypeForDate}
+      />
+    );
+  }
+
   if (!game.currentPuzzle) {
     return (
       <div className="flex-center" style={{ minHeight: '60vh' }}>
@@ -297,6 +424,8 @@ export default function Play() {
   }
 
   const puzzle = game.currentPuzzle;
+  const diffConfig = selectedDifficulty || DIFFICULTY_LEVELS.NOVICE;
+  const maxHints = diffConfig.hints;
 
   // Render the appropriate puzzle component
   const renderPuzzle = () => {
@@ -312,15 +441,17 @@ export default function Play() {
           />
         );
       case 'sequenceSolver':
-        return (
-          <SequenceSolverRenderer puzzle={puzzle} onAnswer={handleAnswer} />
-        );
+        return <SequenceSolverRenderer puzzle={puzzle} onAnswer={handleAnswer} />;
       case 'deductionGrid':
-        return (
-          <DeductionGridRenderer puzzle={puzzle} onAnswer={handleAnswer} />
-        );
+        return <DeductionGridRenderer puzzle={puzzle} onAnswer={handleAnswer} />;
       case 'binaryLogic':
         return <BinaryLogicRenderer puzzle={puzzle} onAnswer={handleAnswer} />;
+      case 'truthAndLies':
+        return <TruthAndLiesRenderer puzzle={puzzle} onAnswer={handleAnswer} />;
+      case 'binaryBridge':
+        return <BinaryBridgeRenderer puzzle={puzzle} onAnswer={handleAnswer} />;
+      case 'quantumGrid':
+        return <QuantumGridRenderer puzzle={puzzle} onAnswer={handleAnswer} />;
       default:
         return <div>Unknown puzzle type</div>;
     }
@@ -329,6 +460,7 @@ export default function Play() {
   return (
     <div>
       {showConfetti && <Confetti />}
+      <AnimatePresence>{showLevelUp && <LevelUpAnimation />}</AnimatePresence>
 
       {/* Header Bar */}
       <div className="play-header">
@@ -342,8 +474,11 @@ export default function Play() {
               {todayDate}
             </div>
           </div>
-          <span className="badge badge-difficulty">
-            Difficulty {puzzle.difficulty}
+          <span
+            className="badge badge-difficulty"
+            style={{ backgroundColor: diffConfig.color, color: '#fff' }}
+          >
+            {diffConfig.label}
           </span>
         </div>
         <div className="play-actions">
@@ -378,14 +513,16 @@ export default function Play() {
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
         >
-          <button
-            className="btn btn-secondary btn-sm"
-            onClick={handleHint}
-            disabled={game.hintsRemaining <= 0}
-          >
-            <Lightbulb size={16} strokeWidth={1.5} /> Hint (
-            {game.hintsRemaining}/{MAX_HINTS})
-          </button>
+          {maxHints > 0 && (
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={handleHint}
+              disabled={game.hintsUsed >= maxHints}
+            >
+              <Lightbulb size={16} strokeWidth={1.5} /> Hint (
+              {Math.max(0, maxHints - game.hintsUsed)}/{maxHints})
+            </button>
+          )}
 
           {puzzle.type === 'patternMatch' &&
             game.currentRound < puzzle.totalRounds - 1 ? (
@@ -449,14 +586,15 @@ export default function Play() {
                   </div>
                   <div className="result-stat">
                     <div className="result-stat-value">
-                      {Math.max(
-                        10,
-                        POINTS_BASE -
-                        game.hintsUsed * 20 -
-                        Math.floor(game.timerSeconds / 60) * 5,
-                      )}
+                      {(() => {
+                        let bp = Math.max(10, POINTS_BASE - game.hintsUsed * 20 - Math.floor(game.timerSeconds / 60) * 5);
+                        if (diffConfig.key === 'GRANDMASTER') {
+                          bp = Math.max(10, bp - Math.floor(game.timerSeconds / 30) * GRANDMASTER_TIME_PENALTY_PER_30S);
+                        }
+                        return Math.round(bp * diffConfig.multiplier);
+                      })()}
                     </div>
-                    <div className="result-stat-label">Points</div>
+                    <div className="result-stat-label">Points ({diffConfig.multiplier}x)</div>
                   </div>
                 </div>
               )}

@@ -20,7 +20,7 @@ const statsSlice = createSlice({
   initialState,
   reducers: {
     recordSolve(state, action) {
-      const { date, points, timeSeconds, puzzleType, noMistakes } =
+      const { date, points, timeSeconds, puzzleType, noMistakes, difficultyLevel } =
         action.payload;
 
       // Update streak
@@ -46,7 +46,7 @@ const statsSlice = createSlice({
       // Running average time
       state.averageTime = Math.round(
         (state.averageTime * (state.totalSolved - 1) + timeSeconds) /
-          state.totalSolved,
+        state.totalSolved,
       );
 
       // Heatmap
@@ -70,7 +70,7 @@ const statsSlice = createSlice({
       }
 
       // Check achievements
-      checkAchievements(state, timeSeconds, noMistakes);
+      checkAchievements(state, timeSeconds, noMistakes, difficultyLevel);
     },
     loadStats(state, action) {
       return { ...state, ...action.payload };
@@ -81,7 +81,7 @@ const statsSlice = createSlice({
   },
 });
 
-function checkAchievements(state, timeSeconds, noMistakes) {
+function checkAchievements(state, timeSeconds, noMistakes, difficultyLevel) {
   const unlock = (id) => {
     if (!state.achievements.includes(id)) {
       state.achievements.push(id);
@@ -94,12 +94,15 @@ function checkAchievements(state, timeSeconds, noMistakes) {
   if (state.currentStreak >= 7) unlock('streak_7');
   if (state.currentStreak >= 30) unlock('streak_30');
   if (timeSeconds < 60) unlock('speed_demon');
-  if (state.solvedTypes.length >= 5) unlock('all_types');
+  if (state.solvedTypes.length >= 8) unlock('all_types');
   if (state.perfectStreak >= 10) unlock('perfect_10');
 
   const hour = new Date().getHours();
   if (hour >= 0 && hour < 5) unlock('night_owl');
   if (hour >= 5 && hour < 7) unlock('early_bird');
+
+  // Grandmaster achievement
+  if (difficultyLevel === 'HARD') unlock('grandmaster_win');
 }
 
 export const { recordSolve, loadStats, resetStats } = statsSlice.actions;

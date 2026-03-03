@@ -37,6 +37,9 @@ import {
   Bird,
   Smartphone,
   Chrome,
+  Scale,
+  Route,
+  Atom,
 } from 'lucide-react';
 
 // Re-export all icons used across the app
@@ -78,6 +81,9 @@ export {
   Bird,
   Smartphone,
   Chrome,
+  Scale,
+  Route,
+  Atom,
 };
 
 /**
@@ -89,6 +95,9 @@ export const PuzzleIconMap = {
   sequenceSolver: Link,
   deductionGrid: Puzzle,
   binaryLogic: Zap,
+  truthAndLies: Scale,
+  binaryBridge: Route,
+  quantumGrid: Atom,
 };
 
 /**

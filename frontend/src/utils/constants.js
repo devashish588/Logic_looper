@@ -4,6 +4,9 @@ export const PUZZLE_TYPES = [
   'sequenceSolver',
   'deductionGrid',
   'binaryLogic',
+  'truthAndLies',
+  'binaryBridge',
+  'quantumGrid',
 ];
 
 export const PUZZLE_LABELS = {
@@ -12,6 +15,9 @@ export const PUZZLE_LABELS = {
   sequenceSolver: 'Sequence Solver',
   deductionGrid: 'Deduction Grid',
   binaryLogic: 'Binary Logic',
+  truthAndLies: 'Truth & Lies',
+  binaryBridge: 'Binary Bridge',
+  quantumGrid: 'Quantum Grid',
 };
 
 // Icon keys — rendered via PuzzleIcon component from Icons.jsx
@@ -21,6 +27,9 @@ export const PUZZLE_ICON_KEYS = {
   sequenceSolver: 'link',
   deductionGrid: 'puzzle',
   binaryLogic: 'zap',
+  truthAndLies: 'scale',
+  binaryBridge: 'route',
+  quantumGrid: 'atom',
 };
 
 export const PUZZLE_DESCRIPTIONS = {
@@ -29,12 +38,62 @@ export const PUZZLE_DESCRIPTIONS = {
   sequenceSolver: 'Discover the rule and fill in missing numbers',
   deductionGrid: 'Use clues to deduce who owns what',
   binaryLogic: 'Trace the logic gates to find the outputs',
+  truthAndLies: 'Identify who tells the truth and who lies',
+  binaryBridge: 'Find the path connecting nodes by numeric rules',
+  quantumGrid: 'Place symbols so every row and column is unique',
 };
+
+// ── Difficulty System ──────────────────────────────────────────
+export const DIFFICULTY_LEVELS = {
+  NOVICE: {
+    key: 'NOVICE',
+    label: 'Novice',
+    dbKey: 'EASY',
+    hints: 3,
+    modifier: 1,
+    multiplier: 1.0,
+    color: '#414BEA',
+    gridSize: 3,
+  },
+  ADEPT: {
+    key: 'ADEPT',
+    label: 'Adept',
+    dbKey: 'MEDIUM',
+    hints: 1,
+    modifier: 2,
+    multiplier: 1.5,
+    color: '#525CEB',
+    gridSize: 5,
+  },
+  GRANDMASTER: {
+    key: 'GRANDMASTER',
+    label: 'Grandmaster',
+    dbKey: 'HARD',
+    hints: 0,
+    modifier: 3,
+    multiplier: 2.5,
+    color: '#F05537',
+    gridSize: 7,
+  },
+};
+
+export const STREAK_DIFFICULTY_THRESHOLDS = {
+  NOVICE: 0,
+  ADEPT: 5,
+  GRANDMASTER: 20,
+};
+
+export function getDifficultyForStreak(streak) {
+  if (streak >= STREAK_DIFFICULTY_THRESHOLDS.GRANDMASTER) return DIFFICULTY_LEVELS.GRANDMASTER;
+  if (streak >= STREAK_DIFFICULTY_THRESHOLDS.ADEPT) return DIFFICULTY_LEVELS.ADEPT;
+  return DIFFICULTY_LEVELS.NOVICE;
+}
 
 export const MAX_HINTS = 3;
 export const POINTS_BASE = 100;
 export const STREAK_BONUS_MULTIPLIER = 0.1;
 export const TIMER_PENALTY_PER_MIN = 5;
+export const GRANDMASTER_TIME_PENALTY_PER_30S = 10;
 
 export const ACHIEVEMENTS = [
   {
@@ -71,7 +130,7 @@ export const ACHIEVEMENTS = [
   {
     id: 'all_types',
     name: 'Well Rounded',
-    desc: 'Solve all 5 puzzle types',
+    desc: 'Solve all 8 puzzle types',
     icon: 'star',
   },
   {
@@ -91,5 +150,11 @@ export const ACHIEVEMENTS = [
     name: 'Early Bird',
     desc: 'Solve before 7 AM',
     icon: 'bird',
+  },
+  {
+    id: 'grandmaster_win',
+    name: 'Grand Master',
+    desc: 'Complete a Grandmaster puzzle',
+    icon: 'crown',
   },
 ];

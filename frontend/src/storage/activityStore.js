@@ -57,6 +57,8 @@ export async function saveDailyActivity(userId, entry) {
     timeSeconds: entry.timeSeconds ?? 0,
     hintsUsed: entry.hintsUsed ?? 0,
     noMistakes: entry.noMistakes ?? false,
+    difficultyLevel: entry.difficultyLevel || 'EASY',
+    gameType: entry.gameType || entry.puzzleType || '',
     synced: false,
   };
   await db.put(ACTIVITY_STORE, record);
