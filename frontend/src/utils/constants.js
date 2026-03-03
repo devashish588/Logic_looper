@@ -43,6 +43,81 @@ export const PUZZLE_DESCRIPTIONS = {
   quantumGrid: 'Place symbols so every row and column is unique',
 };
 
+export const PUZZLE_HOW_TO_PLAY = {
+  numberMatrix: {
+    rules: [
+      'Each cell must contain a number from 1 to N (N = grid size)',
+      'Every row must have each number exactly once',
+      'Every column must have each number exactly once',
+      'Pre-filled cells (highlighted) cannot be changed',
+    ],
+    tip: 'Start with rows or columns that have the most filled cells — fewer possibilities to check.',
+  },
+  patternMatch: {
+    rules: [
+      'A sequence of shapes/patterns is shown with a missing piece',
+      'Study the color, shape, rotation, and size changes',
+      'Select the option that logically continues the pattern',
+      'Each round presents a new pattern to solve',
+    ],
+    tip: 'Look for two properties changing at once — color + shape, or size + rotation.',
+  },
+  sequenceSolver: {
+    rules: [
+      'A number sequence is shown with one or more blanks',
+      'Figure out the mathematical rule connecting the numbers',
+      'Fill in the missing numbers that follow the rule',
+      'Rules can involve addition, multiplication, squares, or combos',
+    ],
+    tip: 'Calculate the differences between consecutive numbers — constant diff means linear, growing diff means quadratic.',
+  },
+  deductionGrid: {
+    rules: [
+      'Several people each own a unique item',
+      'Read the clues carefully to eliminate impossible pairings',
+      'Assign exactly one item to each person using the dropdowns',
+      'Every item must be assigned and no two people share an item',
+    ],
+    tip: 'Start with "direct" clues (e.g., "Alice owns the cat") before tackling elimination clues.',
+  },
+  binaryLogic: {
+    rules: [
+      'A circuit of logic gates (AND, OR, XOR, NOT) is shown',
+      'Input values (0 or 1) are given at the top',
+      'Trace through each gate to compute the unknown outputs',
+      'AND = both 1 → 1 | OR = any 1 → 1 | XOR = different → 1 | NOT = flip',
+    ],
+    tip: 'Work layer by layer, left to right. Compute each gate\'s output before moving deeper.',
+  },
+  truthAndLies: {
+    rules: [
+      'Each character is either a Knight (always tells truth) or a Knave (always lies)',
+      'Each character makes a statement about someone else',
+      'Use logic to figure out who is a Knight and who is a Knave',
+      'Tap a character to toggle between Knight 🛡️ and Knave 🎭',
+    ],
+    tip: 'Start by assuming one character is a Knight, then check if their statement is consistent. If not, they must be a Knave.',
+  },
+  binaryBridge: {
+    rules: [
+      'Build a path from the green start cell (top-left) to the red end cell (bottom-right)',
+      'You can only move to adjacent cells (up, down, left, right — no diagonals)',
+      'The values of consecutive cells must differ by at most the shown limit',
+      'Click a cell to add it to your path, click the last cell to undo',
+    ],
+    tip: 'Plan ahead — don\'t just follow the nearest valid cell. Sometimes a longer route is the only valid one.',
+  },
+  quantumGrid: {
+    rules: [
+      'Select a symbol from the palette at the top',
+      'Tap an empty cell to place the selected symbol',
+      'Every row must contain each symbol exactly once',
+      'Every column must contain each symbol exactly once',
+    ],
+    tip: 'Look for rows or columns missing only one symbol — those are free wins!',
+  },
+};
+
 // ── Difficulty System ──────────────────────────────────────────
 export const DIFFICULTY_LEVELS = {
   NOVICE: {

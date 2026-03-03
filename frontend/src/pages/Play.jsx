@@ -21,6 +21,7 @@ import {
   POINTS_BASE,
   DIFFICULTY_LEVELS,
   GRANDMASTER_TIME_PENALTY_PER_30S,
+  PUZZLE_HOW_TO_PLAY,
   getDifficultyForStreak,
 } from '../utils/constants.js';
 import {
@@ -59,6 +60,7 @@ import {
   Zap,
   Star,
   Trophy,
+  Info,
 } from '../components/Icons.jsx';
 
 function Confetti() {
@@ -130,6 +132,7 @@ function LevelUpAnimation() {
  */
 function DifficultySelector({ suggestedDifficulty, onSelect, puzzleType }) {
   const levels = Object.values(DIFFICULTY_LEVELS);
+  const howTo = PUZZLE_HOW_TO_PLAY[puzzleType];
 
   return (
     <motion.div
@@ -143,6 +146,32 @@ function DifficultySelector({ suggestedDifficulty, onSelect, puzzleType }) {
         <h2 className="difficulty-title">{PUZZLE_LABELS[puzzleType]}</h2>
         <p className="text-muted">{PUZZLE_DESCRIPTIONS[puzzleType]}</p>
       </div>
+
+      {/* How to Play */}
+      {howTo && (
+        <motion.div
+          className="how-to-play"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+        >
+          <div className="how-to-play-header">
+            <Info size={18} strokeWidth={1.5} />
+            <span>How to Play</span>
+          </div>
+          <ul className="how-to-play-rules">
+            {howTo.rules.map((rule, i) => (
+              <li key={i}>{rule}</li>
+            ))}
+          </ul>
+          {howTo.tip && (
+            <div className="how-to-play-tip">
+              <Lightbulb size={14} strokeWidth={1.5} />
+              <span>{howTo.tip}</span>
+            </div>
+          )}
+        </motion.div>
+      )}
 
       <div className="difficulty-cards">
         {levels.map((level, i) => (

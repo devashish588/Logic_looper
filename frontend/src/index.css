@@ -2321,6 +2321,90 @@ body::before {
   letter-spacing: 0.05em;
 }
 
+/* ========== HOW TO PLAY ========== */
+.how-to-play {
+  margin-bottom: 24px;
+  padding: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  backdrop-filter: blur(10px);
+}
+
+.how-to-play-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--accent-secondary);
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.how-to-play-rules {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.how-to-play-rules li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  padding: 6px 10px;
+  background: var(--bg-glass);
+  border-left: 3px solid var(--accent-primary);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.how-to-play-rules li::before {
+  content: counter(list-item);
+  counter-increment: list-item;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  border-radius: var(--radius-full);
+  background: var(--accent-primary);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.how-to-play-rules {
+  counter-reset: list-item;
+}
+
+.how-to-play-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: rgba(240, 85, 55, 0.08);
+  border: 1px solid rgba(240, 85, 55, 0.2);
+  border-radius: var(--radius-md);
+  font-size: 0.8rem;
+  color: var(--accent-warning);
+  line-height: 1.5;
+}
+
+.how-to-play-tip svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
 /* ========== TRUTH & LIES ========== */
 .truth-lies-grid {
   display: grid;
