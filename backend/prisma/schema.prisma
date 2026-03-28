@@ -1,0 +1,61 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String   @id @default(uuid())
+  type        String   @default("guest")  // "guest" | "registered" | "google" | "truecaller"
+  displayName String?
+  email       String?  @unique
+  password    String?
+  avatarUrl   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  stats       UserStats?
+  dailyScores DailyScore[]
+}
+
+model UserStats {
+  id            String   @id @default(uuid())
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  currentStreak Int      @default(0)
+  longestStreak Int      @default(0)
+  totalSolved   Int      @default(0)
+  totalPoints   Int      @default(0)
+  averageTime   Int      @default(0)   // in seconds
+  fastestSolve  Int?                    // in seconds
+  lastSolveDate String?
+
+  solvedTypes   String[] @default([])
+  achievements  String[] @default([])
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model DailyScore {
+  id         String   @id @default(uuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date       String                    // "YYYY-MM-DD"
+  puzzleType String
+  points     Int
+  timeSeconds Int
+  hintsUsed  Int      @default(0)
+  noMistakes Boolean  @default(false)
+
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, date])
+  @@index([date])
+  @@index([points])
+}
