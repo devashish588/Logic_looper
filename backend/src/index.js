@@ -1,12 +1,17 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, resolve } from 'path';
 import userRoutes from './routes/users.js';
 import statsRoutes from './routes/stats.js';
 import leaderboardRoutes from './routes/leaderboard.js';
 import authRoutes from './routes/auth.js';
 
-dotenv.config();
+// Load .env from the backend directory (works both locally and on Vercel)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+dotenv.config({ path: resolve(__dirname, '..', '.env') });
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -48,9 +53,12 @@ app.use((err, req, res, next) => {
     res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
-    console.log(`🧠 Logic Looper API running on http://localhost:${PORT}`);
-    console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
-});
+// Only start the server when running directly (not on Vercel)
+if (process.env.VERCEL !== '1') {
+    app.listen(PORT, () => {
+        console.log(`🧠 Logic Looper API running on http://localhost:${PORT}`);
+        console.log(`   Environment: ${process.env.NODE_ENV || 'development'}`);
+    });
+}
 
 export default app;
