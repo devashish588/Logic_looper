@@ -119,7 +119,6 @@ export {
  */
 export const PuzzleIconMap = {
     numberMatrix: Hash,
-    patternMatch: Palette, // retired from the rotation, still shown for past days
     sequenceSolver: Link,
     deductionGrid: Puzzle,
     binaryLogic: Zap,

@@ -13,7 +13,7 @@ import {
     DIFFICULTY_LEVELS, HINT_ALLOWANCE, computePoints,
 } from '../utils/constants.js';
 import {
-    loadPuzzle, updateAnswer, useHint, addHintedCell, tickTimer, markSolved, markFailed, retry, nextRound,
+    loadPuzzle, updateAnswer, useHint, addHintedCell, tickTimer, markSolved, markFailed, retry,
 } from '../store/gameSlice.js';
 import { recordSolve, setSyncStatus } from '../store/statsSlice.js';
 import { saveDailyActivity } from '../storage/activityStore.js';
@@ -21,7 +21,6 @@ import { savePracticeResult } from '../storage/db.js';
 import { syncDailyActivity } from '../utils/syncManager.js';
 import { buildShareText, resultSquares, formatClock, puzzleNumber } from '../utils/share.js';
 import NumberMatrixRenderer from '../components/puzzles/NumberMatrixRenderer.jsx';
-import PatternMatchRenderer from '../components/puzzles/PatternMatchRenderer.jsx';
 import SequenceSolverRenderer from '../components/puzzles/SequenceSolverRenderer.jsx';
 import DeductionGridRenderer from '../components/puzzles/DeductionGridRenderer.jsx';
 import BinaryLogicRenderer from '../components/puzzles/BinaryLogicRenderer.jsx';
@@ -210,7 +209,6 @@ export default function Play() {
     const timerEnabled = useSelector(state => state.settings.timerEnabled);
     const userId = useSelector(state => state.auth.user?.id);
     const timerRef = useRef(null);
-    const [patternAnswers, setPatternAnswers] = useState({});
     const [showConfetti, setShowConfetti] = useState(false);
     const [notice, setNotice] = useState(null);
     const [newBadges, setNewBadges] = useState([]);
@@ -252,7 +250,6 @@ export default function Play() {
     const ready = Boolean(puzzleId) && stats.hydrated && !alreadySolved && (!isDaily || dailyInProgress);
     useEffect(() => {
         if (!ready) return;
-        setPatternAnswers({});
         setNotice(null);
         setSolvedThisVisit(false);
         setNewBadges([]);
@@ -286,15 +283,9 @@ export default function Play() {
         }));
     };
 
-    function handleAnswer(answer, roundIdx) {
+    function handleAnswer(answer) {
         setNotice(null);
         const puzzle = game.currentPuzzle;
-        if (puzzle?.type === 'patternMatch') {
-            const next = { ...patternAnswers, [roundIdx]: answer };
-            setPatternAnswers(next);
-            dispatch(updateAnswer(next));
-            return;
-        }
         dispatch(updateAnswer(answer));
         // Puzzles with live feedback have no Submit button: they finish the moment they're right.
         if (puzzle?.autoCheck && !store.getState().game.solved && checkPuzzle(puzzle, answer)) {
@@ -306,15 +297,12 @@ export default function Play() {
         const puzzle = game.currentPuzzle;
         if (!puzzle || game.solved) return;
 
-        const isPattern = puzzle.type === 'patternMatch';
-        const hasAnswer = isPattern ? Object.keys(patternAnswers).length > 0 : hasAnyAnswer(puzzle, game.userAnswer);
-        if (!hasAnswer) {
+        if (!hasAnyAnswer(puzzle, game.userAnswer)) {
             setNotice('Fill in your answer before submitting.');
             return;
         }
 
-        const answer = isPattern ? patternAnswers : game.userAnswer;
-        if (!checkPuzzle(puzzle, answer)) {
+        if (!checkPuzzle(puzzle, game.userAnswer)) {
             dispatch(markFailed());
             return;
         }
@@ -391,9 +379,7 @@ export default function Play() {
 
         // The original games reveal the value right on the board (their renderers highlight it)
         if (REVEAL_HINT_TYPES.has(puzzle.type)) {
-            const data = computeRevealHint(puzzle, {
-                userAnswer: game.userAnswer, currentRound: game.currentRound, hintsUsed: game.hintsUsed,
-            });
+            const data = computeRevealHint(puzzle, { userAnswer: game.userAnswer });
             if (data) {
                 setNotice(null);
                 dispatch(useHint());
@@ -553,8 +539,6 @@ export default function Play() {
         switch (puzzle.type) {
             case 'numberMatrix':
                 return <NumberMatrixRenderer key={key} puzzle={puzzle} onAnswer={handleAnswer} />;
-            case 'patternMatch':
-                return <PatternMatchRenderer key={key} puzzle={puzzle} onAnswer={handleAnswer} currentRound={game.currentRound} />;
             case 'sequenceSolver':
                 return <SequenceSolverRenderer key={key} puzzle={puzzle} onAnswer={handleAnswer} />;
             case 'deductionGrid':
@@ -694,15 +678,7 @@ export default function Play() {
                         <Lightbulb size={16} strokeWidth={1.5} /> Hint ({hintsLeft}/{allowance})
                     </button>
 
-                    {puzzle.type === 'patternMatch' && game.currentRound < puzzle.totalRounds - 1 ? (
-                        <button
-                            className="btn btn-primary"
-                            onClick={() => dispatch(nextRound())}
-                            disabled={patternAnswers[game.currentRound] === undefined}
-                        >
-                            Next Round
-                        </button>
-                    ) : puzzle.autoCheck ? null : (
+                    {puzzle.autoCheck ? null : (
                         <button className="btn btn-primary" onClick={handleSubmit}>
                             Submit Solution
                         </button>

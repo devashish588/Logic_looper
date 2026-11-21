@@ -20,7 +20,6 @@ const initialState = {
     failed: false,
     showResult: false,
     earnedPoints: 0,
-    currentRound: 0,        // for multi-round puzzles
     loading: false,
 };
 
@@ -28,7 +27,6 @@ const initialState = {
 // returning can't reset them), but clear entered answers, since the puzzle inputs remount empty.
 function resumeSession(s) {
     s.userAnswer = null;
-    s.currentRound = 0;
     s.failed = false;
     s.showResult = false;
     s.timerRunning = !s.solved;
@@ -138,9 +136,6 @@ const gameSlice = createSlice({
             state.failed = false;
             state.showResult = false;
         },
-        nextRound(state) {
-            state.currentRound += 1;
-        },
         resetGame() {
             return initialState;
         },
@@ -164,7 +159,6 @@ export const {
     markSolved,
     markFailed,
     retry,
-    nextRound,
     resetGame,
     setLoading,
 } = gameSlice.actions;

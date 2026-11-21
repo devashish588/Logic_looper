@@ -2051,16 +2051,6 @@ h3 {
     grid-template-columns: repeat(4, 1fr);
   }
 
-  .pattern-shape {
-    width: 64px;
-    height: 64px;
-  }
-
-  .shape-svg {
-    width: 40px;
-    height: 40px;
-  }
-
   .auth-card {
     padding: 36px 32px;
   }
