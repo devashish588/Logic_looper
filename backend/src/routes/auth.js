@@ -1,13 +1,14 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { PrismaClient } from '@prisma/client';
+import prisma from '../lib/prisma.js';
 
 const router = express.Router();
-const prisma = new PrismaClient();
 
 const SALT_ROUNDS = 10;
-const TOKEN_EXPIRY = '7d';
+// Long-lived so daily players aren't silently signed out mid-streak; the client
+// re-prompts for login on 401 without touching local progress.
+const TOKEN_EXPIRY = '30d';
 
 function generateToken(user) {
     return jwt.sign(
@@ -31,7 +32,9 @@ function sanitizeUser(user) {
 // POST /api/auth/register
 router.post('/register', async (req, res) => {
     try {
-        const { email, password, displayName } = req.body;
+        const email = String(req.body?.email || '').trim().toLowerCase();
+        const password = String(req.body?.password || '');
+        const displayName = String(req.body?.displayName || '').trim().slice(0, 40);
 
         // Validation
         if (!email || !password) {
@@ -43,7 +46,7 @@ router.post('/register', async (req, res) => {
         }
 
         // Check if email already exists
-        const existing = await prisma.user.findUnique({ where: { email } });
+        const existing = await prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
         if (existing) {
             return res.status(409).json({ error: 'An account with this email already exists' });
         }
@@ -73,13 +76,16 @@ router.post('/register', async (req, res) => {
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
     try {
-        const { email, password } = req.body;
+        const email = String(req.body?.email || '').trim().toLowerCase();
+        const password = String(req.body?.password || '');
 
         if (!email || !password) {
             return res.status(400).json({ error: 'Email and password are required' });
         }
 
-        const user = await prisma.user.findUnique({ where: { email } });
+        // Accounts created before emails were normalized may be stored mixed-case.
+        const user = await prisma.user.findUnique({ where: { email } })
+            ?? await prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
         if (!user || !user.password) {
             return res.status(401).json({ error: 'Invalid email or password' });
         }
@@ -147,12 +153,13 @@ router.post('/google', async (req, res) => {
         }
 
         const payload = ticket.getPayload();
-        const email = payload.email;
-        const name = payload.name || payload.email.split('@')[0];
+        const email = String(payload.email).trim().toLowerCase();
+        const name = payload.name || email.split('@')[0];
         const avatarUrl = payload.picture || null;
 
         // Find or create user
-        let user = await prisma.user.findUnique({ where: { email } });
+        // Case-insensitive, like password login, so one person never ends up with two accounts
+        let user = await prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
 
         if (!user) {
             user = await prisma.user.create({
@@ -167,7 +174,7 @@ router.post('/google', async (req, res) => {
         } else {
             // Update avatar & name if changed
             user = await prisma.user.update({
-                where: { email },
+                where: { id: user.id },
                 data: {
                     displayName: user.displayName || name,
                     avatarUrl: avatarUrl || user.avatarUrl,

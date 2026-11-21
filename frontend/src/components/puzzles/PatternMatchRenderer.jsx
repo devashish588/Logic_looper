@@ -45,37 +45,27 @@ const ShapeSVG = ({ shape, color, rotation }) => {
 
 export default function PatternMatchRenderer({ puzzle, onAnswer, currentRound = 0 }) {
     const round = puzzle.rounds[currentRound];
-    if (!round) return null;
 
+    // Hooks must run unconditionally, before any early return.
     const [selectedOption, setSelectedOption] = React.useState(null);
-    const [eliminated, setEliminated] = React.useState([]);
     const hintedCells = useSelector(state => state.game.hintedCells);
 
-    // Gather all eliminated indices from hints
-    const hintedEliminations = useMemo(() => {
-        return hintedCells
-            .filter(h => h.type === 'eliminate')
-            .map(h => h.eliminateIndex);
-    }, [hintedCells]);
-
-    // Merge hint eliminations into local eliminated state
-    useEffect(() => {
-        if (hintedEliminations.length > 0) {
-            setEliminated(prev => {
-                const newSet = new Set([...prev, ...hintedEliminations]);
-                return Array.from(newSet);
-            });
-        }
-    }, [hintedEliminations]);
+    // Options ruled out by hints for THIS round only. (A hint's option number belongs to the round it
+    // was used in: applying it to later rounds could grey out the correct answer there.)
+    const eliminated = useMemo(() => hintedCells
+        .filter(h => h.type === 'eliminate' && (h.round ?? currentRound) === currentRound)
+        .map(h => h.eliminateIndex), [hintedCells, currentRound]);
 
     React.useEffect(() => {
         setSelectedOption(null);
-        setEliminated(prev => {
-            // Keep hint eliminations across rounds
-            const hintSet = new Set(hintedEliminations);
-            return prev.filter(i => hintSet.has(i));
-        });
     }, [currentRound]);
+
+    // If a hint just ruled out the option the player had picked, clear the pick.
+    React.useEffect(() => {
+        if (selectedOption !== null && eliminated.includes(selectedOption)) setSelectedOption(null);
+    }, [eliminated, selectedOption]);
+
+    if (!round) return null;
 
     function handleSelect(idx) {
         if (eliminated.includes(idx)) return;

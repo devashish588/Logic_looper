@@ -98,16 +98,73 @@ const RULES = [
     },
 ];
 
-export function generate(rng, difficulty = 1) {
+const PRIMES = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59];
+
+// Extra rules used from the v2 rotation onward (older dates keep the original set,
+// so their puzzles never change).
+const RULES_V2 = [
+    {
+        name: 'primes',
+        gen: (rng) => {
+            const start = randInt(0, 5, rng);
+            return { fn: (i) => PRIMES[start + i], label: 'primes' };
+        },
+    },
+    {
+        name: 'double-plus',
+        gen: (rng) => {
+            const a = randInt(1, 4, rng);
+            const k = randInt(1, 3, rng);
+            const seq = [a];
+            for (let i = 1; i < 8; i++) seq.push(seq[i - 1] * 2 + k);
+            return { fn: (i) => seq[i], label: `×2 +${k}` };
+        },
+    },
+    {
+        name: 'descending',
+        gen: (rng) => {
+            const diff = randInt(3, 9, rng);
+            // Sequences are at most 7 long (6 steps), so this always stays positive.
+            const start = diff * 6 + randInt(3, 30, rng);
+            return { fn: (i) => start - diff * i, label: `−${diff}` };
+        },
+    },
+    {
+        name: 'interleaved',
+        gen: (rng) => {
+            const a = randInt(1, 9, rng);
+            const da = randInt(2, 5, rng);
+            const b = randInt(20, 40, rng);
+            const db = -randInt(1, 4, rng);
+            return {
+                fn: (i) => (i % 2 === 0 ? a + da * (i / 2) : b + db * ((i - 1) / 2)),
+                label: `+${da} / ${db}`,
+            };
+        },
+    },
+    {
+        name: 'growing-step',
+        gen: (rng) => {
+            const start = randInt(1, 10, rng);
+            const first = randInt(1, 3, rng);
+            const seq = [start];
+            for (let i = 1; i < 8; i++) seq.push(seq[i - 1] + first + (i - 1));
+            return { fn: (i) => seq[i], label: `+${first}, +${first + 1}, +${first + 2}…` };
+        },
+    },
+];
+
+export function generate(rng, difficulty = 1, opts = {}) {
     const numRounds = Math.min(2 + Math.floor(difficulty), 5);
     const rounds = [];
 
-    // At higher difficulty use more complex rules
+    // At higher difficulty use more complex rules (as deployed); from the cutover on, also the newer rules
     const availableRules = difficulty >= 1.5 ? RULES : RULES.slice(0, 7);
+    const rules = opts.v2 ? [...availableRules, ...RULES_V2] : availableRules;
 
     for (let r = 0; r < numRounds; r++) {
-        const ruleIdx = randInt(0, availableRules.length - 1, rng);
-        const rule = availableRules[ruleIdx];
+        const ruleIdx = randInt(0, rules.length - 1, rng);
+        const rule = rules[ruleIdx];
         const { fn, label } = rule.gen(rng);
 
         const length = randInt(5, 7, rng);

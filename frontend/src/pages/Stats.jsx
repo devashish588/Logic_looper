@@ -1,13 +1,14 @@
-import React, { useMemo, useEffect, useState } from 'react';
+import React, { useMemo, useEffect, useState, useCallback } from 'react';
 import { useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import dayjs from 'dayjs';
 import HeatmapCell, { INTENSITY_COLORS } from '../components/HeatmapCell.jsx';
-import { getDailyActivity } from '../storage/activityStore.js';
-import { calculateStreaks } from '../utils/streakCalculator.js';
+import { PUZZLE_LABELS, PUZZLE_TYPES, RETIRED_PUZZLE_TYPES } from '../utils/constants.js';
+import { MAX_FREEZES, FREEZE_EVERY } from '../utils/streakCalculator.js';
 import {
     BarChart3, Flame, Trophy, CheckCircle,
-    Gem, Clock, Zap, Star, Calendar,
+    Gem, Clock, Zap, Star, Calendar, Snowflake,
 } from '../components/Icons.jsx';
 
 /* ─── Build 7-row × N-column grid for a given year ─── */
@@ -27,6 +28,7 @@ function buildHeatmapGrid(activityMap, year) {
             score: entry?.score || 0,
             intensity: entry?.intensity || 0,
             puzzleType: entry?.puzzleType || '',
+            frozen: Boolean(entry?.frozen),
             isToday: d.isSame(today, 'day'),
         });
         d = d.add(1, 'day');
@@ -62,7 +64,7 @@ function buildMonthLabels(weeks) {
         if (!firstCell) return;
         const month = dayjs(firstCell.date).month();
         if (month !== lastMonth) {
-            if (labels.length === 0 || colIdx - labels[labels.length - 1].colIdx >= 3) {
+            if (labels.length === 0 || colIdx - labels[labels.length - 1].colIdx >= 4) {
                 labels.push({ month: MONTHS[month], colIdx });
             }
             lastMonth = month;
@@ -82,11 +84,14 @@ const LEGEND_LEVELS = [
     { color: INTENSITY_COLORS[4] },
     { color: INTENSITY_COLORS[5] },
 ];
+const FREEZE_LEGEND_COLOR = 'var(--freeze-color)';
 
 function Heatmap({ justSolved }) {
-    const userId = useSelector(state => state.auth.user?.id);
-    const reduxHeatmap = useSelector(state => state.stats.heatmapData);
-    const [activityMap, setActivityMap] = useState({});
+    // Built from the same merged history as every other number on this page, so older days can never
+    // be hidden by a second data source.
+    const history = useSelector(state => state.stats.history);
+    const frozenDates = useSelector(state => state.stats.frozenDates);
+    const navigate = useNavigate();
     const [selectedYear, setSelectedYear] = useState(dayjs().year());
 
     const currentYear = dayjs().year();
@@ -96,35 +101,21 @@ function Heatmap({ justSolved }) {
         return years;
     }, [currentYear]);
 
-    useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            const map = {};
-            for (const [date, score] of Object.entries(reduxHeatmap || {})) {
-                let intensity = 0;
-                if (score > 0) intensity = 1;
-                if (score >= 30) intensity = 2;
-                if (score >= 60) intensity = 3;
-                if (score >= 90) intensity = 4;
-                if (score >= 100) intensity = 5;
-                map[date] = { date, score, intensity, puzzleType: '', solved: score > 0 };
-            }
-            if (userId) {
-                try {
-                    const entries = await getDailyActivity(userId);
-                    if (!cancelled && entries.length > 0) {
-                        for (const e of entries) {
-                            if (!map[e.date] || e.score >= (map[e.date]?.score || 0)) {
-                                map[e.date] = e;
-                            }
-                        }
-                    }
-                } catch (err) { console.warn('Activity load failed:', err); }
-            }
-            if (!cancelled) setActivityMap(map);
-        })();
-        return () => { cancelled = true; };
-    }, [userId, reduxHeatmap]);
+    const activityMap = useMemo(() => {
+        const map = {};
+        for (const e of Object.values(history)) {
+            map[e.date] = { date: e.date, score: e.points, puzzleType: e.puzzleType, solved: true };
+        }
+        for (const date of frozenDates) {
+            if (!map[date]) map[date] = { date, score: 0, frozen: true };
+        }
+        return map;
+    }, [history, frozenDates]);
+
+    // Clicking a past day opens that day's puzzle for practice
+    const openDay = useCallback((date) => {
+        navigate(date === dayjs().format('YYYY-MM-DD') ? '/play' : `/practice/${date}`);
+    }, [navigate]);
 
     const weeks = useMemo(() => buildHeatmapGrid(activityMap, selectedYear), [activityMap, selectedYear]);
     const monthLabels = useMemo(() => buildMonthLabels(weeks), [weeks]);
@@ -140,7 +131,8 @@ function Heatmap({ justSolved }) {
      * Month row:  gridRow 1
      * Day rows:   gridRow 2–8 (7 rows for Sun–Sat)
      */
-    const gridCols = `24px repeat(${totalWeeks}, 1fr)`;
+    // minmax(0, 1fr): columns may shrink below their content, so the grid always fits a narrow phone
+    const gridCols = `24px repeat(${totalWeeks}, minmax(0, 1fr))`;
 
     return (
         <div className="heatmap-container">
@@ -204,6 +196,8 @@ function Heatmap({ justSolved }) {
                                     intensity={cell.intensity}
                                     puzzleType={cell.puzzleType}
                                     isToday={cell.isToday}
+                                    frozen={cell.frozen}
+                                    onSelect={openDay}
                                     justSolved={justSolved}
                                     weekIndex={colIdx}
                                     totalWeeks={totalWeeks}
@@ -223,6 +217,8 @@ function Heatmap({ justSolved }) {
                     <div key={i} className="heatmap-legend-cell" style={{ backgroundColor: lv.color }} />
                 ))}
                 <span className="heatmap-legend-text">More</span>
+                <div className="heatmap-legend-cell" style={{ backgroundColor: FREEZE_LEGEND_COLOR, marginLeft: '12px' }} />
+                <span className="heatmap-legend-text">Freeze</span>
             </div>
         </div>
     );
@@ -230,37 +226,27 @@ function Heatmap({ justSolved }) {
 
 export default function Stats() {
     const stats = useSelector(state => state.stats);
-    const userId = useSelector(state => state.auth.user?.id);
-    const reduxHeatmap = useSelector(state => state.stats.heatmapData);
     const [justSolved, setJustSolved] = useState(false);
-    const [enrichedStreaks, setEnrichedStreaks] = useState(null);
-
-    useEffect(() => {
-        let cancelled = false;
-        (async () => {
-            if (userId) {
-                try {
-                    const entries = await getDailyActivity(userId);
-                    if (!cancelled && entries.length > 0) {
-                        setEnrichedStreaks(calculateStreaks(entries));
-                    }
-                } catch (e) { console.warn('Streak calc failed:', e); }
-            }
-        })();
-        return () => { cancelled = true; };
-    }, [userId, reduxHeatmap]);
-
-    const currentStreak = Math.max(stats.currentStreak || 0, enrichedStreaks?.currentStreak || 0);
-    const longestStreak = Math.max(stats.longestStreak || 0, enrichedStreaks?.longestStreak || 0, currentStreak);
+    const currentStreak = stats.currentStreak;
+    const longestStreak = stats.longestStreak;
 
     useEffect(() => {
         const today = dayjs().format('YYYY-MM-DD');
-        if (reduxHeatmap[today] > 0) {
+        if (stats.heatmapData[today] > 0) {
             setJustSolved(true);
             const t = setTimeout(() => setJustSolved(false), 3000);
             return () => clearTimeout(t);
         }
-    }, [reduxHeatmap]);
+    }, [stats.heatmapData]);
+
+    // Solves per puzzle type, for the breakdown bars (retired types only show if there is history)
+    const typeCounts = useMemo(() => {
+        const counts = {};
+        for (const e of Object.values(stats.history)) counts[e.puzzleType] = (counts[e.puzzleType] || 0) + 1;
+        return counts;
+    }, [stats.history]);
+    const breakdownTypes = [...PUZZLE_TYPES, ...RETIRED_PUZZLE_TYPES.filter(t => typeCounts[t] > 0)];
+    const maxTypeCount = Math.max(1, ...breakdownTypes.map(t => typeCounts[t] || 0));
 
     const formatTime = (s) => {
         if (!s) return '—';
@@ -274,6 +260,13 @@ export default function Stats() {
                 <p className="page-subtitle">Your Logic Looper journey</p>
             </motion.div>
 
+            {stats.recoveredCount > 0 && (
+                <div className="recovery-banner" role="status">
+                    Restored {stats.recoveredCount} day{stats.recoveredCount === 1 ? '' : 's'} of progress
+                    from this device and backed {stats.recoveredCount === 1 ? 'it' : 'them'} up to your account.
+                </div>
+            )}
+
             {/* Streak */}
             <motion.div className="card" style={{ marginBottom: '24px', textAlign: 'center' }}
                 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
@@ -284,6 +277,11 @@ export default function Stats() {
                         <div className="streak-label">Day Streak</div>
                     </div>
                 </div>
+                <p className="text-muted streak-help">
+                    Every {FREEZE_EVERY} days in a row earns a streak freeze (hold up to {MAX_FREEZES}).
+                    Miss a day and a freeze is used automatically, so your streak survives.
+                    Click any past day on the heatmap to practice it.
+                </p>
             </motion.div>
 
             {/* Stats Grid */}
@@ -314,8 +312,15 @@ export default function Stats() {
                     <div className="stat-card-label">Fastest Solve</div>
                 </div>
                 <div className="stat-card">
+                    <div className="stat-card-icon"><Snowflake size={24} strokeWidth={1.5} /></div>
+                    <div className="stat-card-value">{stats.freezesAvailable}/{MAX_FREEZES}</div>
+                    <div className="stat-card-label">
+                        {stats.nextFreezeIn ? `Freezes · next in ${stats.nextFreezeIn}` : 'Freezes · bank full'}
+                    </div>
+                </div>
+                <div className="stat-card">
                     <div className="stat-card-icon"><Star size={24} strokeWidth={1.5} /></div>
-                    <div className="stat-card-value">{stats.solvedTypes.length}/5</div>
+                    <div className="stat-card-value">{stats.solvedTypes.length}/{PUZZLE_TYPES.length}</div>
                     <div className="stat-card-label">Types Mastered</div>
                 </div>
             </motion.div>
@@ -325,6 +330,24 @@ export default function Stats() {
                 <div className="section-title"><Calendar size={18} strokeWidth={1.5} /> Activity</div>
                 <div className="card" style={{ overflow: 'visible', padding: '14px' }}>
                     <Heatmap justSolved={justSolved} />
+                </div>
+            </motion.div>
+
+            {/* Per-type breakdown */}
+            <motion.div className="section" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+                <div className="section-title"><Star size={18} strokeWidth={1.5} /> Puzzle Types</div>
+                <div className="card type-breakdown">
+                    {breakdownTypes.map(type => (
+                        <div key={type} className="type-row">
+                            <span className="type-row-label">
+                                {PUZZLE_LABELS[type]}{RETIRED_PUZZLE_TYPES.includes(type) ? ' (retired)' : ''}
+                            </span>
+                            <div className="type-row-track">
+                                <div className="type-row-fill" style={{ width: `${((typeCounts[type] || 0) / maxTypeCount) * 100}%` }} />
+                            </div>
+                            <span className="type-row-count">{typeCounts[type] || 0}</span>
+                        </div>
+                    ))}
                 </div>
             </motion.div>
         </div>

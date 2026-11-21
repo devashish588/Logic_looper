@@ -1,77 +1,52 @@
 import { createSlice } from '@reduxjs/toolkit';
-import { ACHIEVEMENTS } from '../utils/constants.js';
+import { deriveStats, normalizeEntry, isBetterEntry } from '../utils/statsCalculator.js';
+
+const emptyDerived = deriveStats([]);
 
 const initialState = {
-    currentStreak: 0,
-    longestStreak: 0,
-    totalSolved: 0,
-    totalPoints: 0,
-    averageTime: 0,
-    lastSolveDate: null,
-    heatmapData: {},       // { 'YYYY-MM-DD': score }
-    solvedTypes: [],        // unique puzzle types solved
-    achievements: [],       // unlocked achievement IDs
-    perfectStreak: 0,       // consecutive no-mistake solves
-    fastestSolve: null,     // in seconds
+    history: {},            // { 'YYYY-MM-DD': normalized entry }: the source of truth
+    ...emptyDerived,        // currentStreak, longestStreak, totals, heatmapData, achievements…
+    hydrated: false,        // true once the signed-in user's history has been loaded
+    syncStatus: 'idle',     // 'idle' | 'syncing' | 'synced' | 'offline' | 'unauthorized' | 'error'
+    lastSyncedAt: null,
+    recoveredCount: 0,      // days restored from this device that the server didn't have
 };
+
+function recompute(state) {
+    Object.assign(state, deriveStats(Object.values(state.history), state.achievements));
+}
 
 const statsSlice = createSlice({
     name: 'stats',
     initialState,
     reducers: {
-        recordSolve(state, action) {
-            const { date, points, timeSeconds, puzzleType, noMistakes } = action.payload;
-
-            // Update streak
-            if (state.lastSolveDate) {
-                const lastDate = new Date(state.lastSolveDate);
-                const today = new Date(date);
-                const diff = Math.floor((today - lastDate) / (1000 * 60 * 60 * 24));
-                if (diff === 1) {
-                    state.currentStreak += 1;
-                } else if (diff > 1) {
-                    state.currentStreak = 1;
-                }
-                // same day — don't increment
-            } else {
-                state.currentStreak = 1;
+        /** Replace the history with a fully merged one (on login / app start). */
+        setHistory(state, action) {
+            const { entries = [], achievements = [], recoveredCount = 0 } = action.payload || {};
+            state.history = {};
+            for (const raw of entries) {
+                const e = normalizeEntry(raw);
+                if (e && isBetterEntry(e, state.history[e.date])) state.history[e.date] = e;
             }
-
-            state.longestStreak = Math.max(state.longestStreak, state.currentStreak);
-            state.lastSolveDate = date;
-            state.totalSolved += 1;
-            state.totalPoints += points;
-
-            // Running average time
-            state.averageTime = Math.round(
-                ((state.averageTime * (state.totalSolved - 1)) + timeSeconds) / state.totalSolved
-            );
-
-            // Heatmap
-            state.heatmapData[date] = (state.heatmapData[date] || 0) + points;
-
-            // Track solved types
-            if (!state.solvedTypes.includes(puzzleType)) {
-                state.solvedTypes.push(puzzleType);
-            }
-
-            // Perfect streak
-            if (noMistakes) {
-                state.perfectStreak += 1;
-            } else {
-                state.perfectStreak = 0;
-            }
-
-            // Fastest
-            if (!state.fastestSolve || timeSeconds < state.fastestSolve) {
-                state.fastestSolve = timeSeconds;
-            }
-
-            // Check achievements
-            checkAchievements(state, timeSeconds);
+            state.achievements = achievements;
+            state.recoveredCount = recoveredCount;
+            state.hydrated = true;
+            recompute(state);
         },
-        loadStats(state, action) {
-            return { ...state, ...action.payload };
+        /** Add one solve. Ignored if the day already has an equal or better result. */
+        recordSolve(state, action) {
+            const e = normalizeEntry(action.payload);
+            if (!e || !isBetterEntry(e, state.history[e.date])) return;
+            state.history[e.date] = e;
+            recompute(state);
+        },
+        /** Recompute date-relative values (current streak) e.g. after midnight. */
+        refreshDerived(state) {
+            recompute(state);
+        },
+        setSyncStatus(state, action) {
+            state.syncStatus = action.payload;
+            if (action.payload === 'synced') state.lastSyncedAt = new Date().toISOString();
         },
         resetStats() {
             return initialState;
@@ -79,25 +54,5 @@ const statsSlice = createSlice({
     },
 });
 
-function checkAchievements(state, timeSeconds) {
-    const unlock = (id) => {
-        if (!state.achievements.includes(id)) {
-            state.achievements.push(id);
-        }
-    };
-
-    if (state.totalSolved >= 1) unlock('first_solve');
-    if (state.currentStreak >= 3) unlock('streak_3');
-    if (state.currentStreak >= 7) unlock('streak_7');
-    if (state.currentStreak >= 30) unlock('streak_30');
-    if (timeSeconds < 60) unlock('speed_demon');
-    if (state.solvedTypes.length >= 5) unlock('all_types');
-    if (state.perfectStreak >= 10) unlock('perfect_10');
-
-    const hour = new Date().getHours();
-    if (hour >= 0 && hour < 5) unlock('night_owl');
-    if (hour >= 5 && hour < 7) unlock('early_bird');
-}
-
-export const { recordSolve, loadStats, resetStats } = statsSlice.actions;
+export const { setHistory, recordSolve, refreshDerived, setSyncStatus, resetStats } = statsSlice.actions;
 export default statsSlice.reducer;

@@ -1,19 +1,38 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
-import { useNavigate } from 'react-router-dom';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { useSelector, useDispatch, useStore } from 'react-redux';
+import { useNavigate, useParams, Navigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { generatePuzzle, validateSolution, getPuzzleHint, getTodayDateString, getPuzzleTypeForDate } from '../engine/generator.js';
-import { PUZZLE_LABELS, PUZZLE_DESCRIPTIONS, PUZZLE_RULES, POINTS_BASE, MAX_HINTS, DIFFICULTY_LEVELS, HINT_ALLOWANCE, calculateFinalScore } from '../utils/constants.js';
-import { setPuzzle, updateAnswer, useHint, addHintedCell, tickTimer, stopTimer, markSolved, markFailed, nextRound, resetGame, setDifficulty } from '../store/gameSlice.js';
-import { recordSolve } from '../store/statsSlice.js';
-import { saveAllState } from '../storage/db.js';
+import dayjs from 'dayjs';
+import {
+    generatePuzzle, generatePuzzleOfType, checkPuzzle, difficultyLabel, FREE_PLAY_LEVELS,
+    getTodayDateString, getPuzzleTypeForDate,
+} from '../engine/generator.js';
+import { buildHint, hasAnyAnswer, computeRevealHint, REVEAL_HINT_TYPES } from '../engine/hints.js';
+import {
+    PUZZLE_TYPES, PUZZLE_LABELS, PUZZLE_DESCRIPTIONS, PUZZLE_RULES, MAX_HINTS, ACHIEVEMENTS,
+    DIFFICULTY_LEVELS, HINT_ALLOWANCE, computePoints,
+} from '../utils/constants.js';
+import {
+    loadPuzzle, updateAnswer, useHint, addHintedCell, tickTimer, markSolved, markFailed, retry, nextRound,
+} from '../store/gameSlice.js';
+import { recordSolve, setSyncStatus } from '../store/statsSlice.js';
 import { saveDailyActivity } from '../storage/activityStore.js';
+import { savePracticeResult } from '../storage/db.js';
 import { syncDailyActivity } from '../utils/syncManager.js';
+import { buildShareText, resultSquares, formatClock, puzzleNumber } from '../utils/share.js';
 import NumberMatrixRenderer from '../components/puzzles/NumberMatrixRenderer.jsx';
 import PatternMatchRenderer from '../components/puzzles/PatternMatchRenderer.jsx';
 import SequenceSolverRenderer from '../components/puzzles/SequenceSolverRenderer.jsx';
 import DeductionGridRenderer from '../components/puzzles/DeductionGridRenderer.jsx';
 import BinaryLogicRenderer from '../components/puzzles/BinaryLogicRenderer.jsx';
+import SwitchboardRenderer from '../components/puzzles/SwitchboardRenderer.jsx';
+import LaserPathRenderer from '../components/puzzles/LaserPathRenderer.jsx';
+import MeasureUpRenderer from '../components/puzzles/MeasureUpRenderer.jsx';
+import BalanceScaleRenderer from '../components/puzzles/BalanceScaleRenderer.jsx';
+import PixelLogicRenderer from '../components/puzzles/PixelLogicRenderer.jsx';
+import NumberTrailRenderer from '../components/puzzles/NumberTrailRenderer.jsx';
+import LetterLockRenderer from '../components/puzzles/LetterLockRenderer.jsx';
+import NextPuzzleCountdown from '../components/NextPuzzleCountdown.jsx';
 import {
     PuzzleIcon,
     Clock,
@@ -24,7 +43,32 @@ import {
     BarChart3,
     ArrowLeft,
     Info,
+    Flame,
+    Share2,
+    Snowflake,
+    CalendarDays,
+    Dices,
+    AchievementIcon,
 } from '../components/Icons.jsx';
+
+/** How far back the archive goes. */
+export const ARCHIVE_DAYS = 365;
+
+/** A past date the archive allows, or null. */
+export function validPracticeDate(date) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return null;
+    const d = dayjs(date);
+    const today = dayjs().startOf('day');
+    if (!d.isValid() || d.format('YYYY-MM-DD') !== date) return null;
+    if (!d.isBefore(today) || today.diff(d, 'day') > ARCHIVE_DAYS) return null;
+    return date;
+}
+
+// Practice replays use the middle level; Free Play's levels map onto the same three names, so hints
+// and badges read the same everywhere.
+const PRACTICE_DIFFICULTY = 'intermediate';
+const FREE_LEVEL_TO_DIFFICULTY = { easy: 'novice', medium: 'intermediate', hard: 'expert' };
+const DIFFICULTY_LABEL = Object.fromEntries(DIFFICULTY_LEVELS.map(l => [l.key, l.label]));
 
 function Confetti() {
     const pieces = useMemo(() => {
@@ -120,226 +164,282 @@ function HowToPlay({ puzzleType }) {
     );
 }
 
+/** The share grid, drawn as squares (the shared text uses emoji). */
+export function ResultSquares({ hintsUsed, mistakes }) {
+    const labels = { hint: 'hint', miss: 'wrong submission', solve: 'solved' };
+    return (
+        <div className="result-squares" aria-label={`${hintsUsed} hints, ${mistakes} wrong submissions, solved`}>
+            {resultSquares({ hintsUsed, mistakes }).map((kind, i) => (
+                <span key={i} className={`result-square ${kind}`} title={labels[kind]} />
+            ))}
+        </div>
+    );
+}
+
+export function ShareButton({ text, className = 'btn btn-secondary' }) {
+    const [copied, setCopied] = useState(false);
+
+    async function handleShare() {
+        try {
+            if (navigator.share) {
+                await navigator.share({ text });
+                return;
+            }
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            /* user cancelled the share sheet */
+        }
+    }
+
+    return (
+        <button className={className} onClick={handleShare}>
+            <Share2 size={16} strokeWidth={1.5} /> {copied ? 'Copied!' : 'Share'}
+        </button>
+    );
+}
+
 export default function Play() {
     const dispatch = useDispatch();
+    const store = useStore();
     const navigate = useNavigate();
+    const { date: dateParam, type: typeParam, level: levelParam, seed: seedParam } = useParams();
     const game = useSelector(state => state.game);
     const stats = useSelector(state => state.stats);
+    const timerEnabled = useSelector(state => state.settings.timerEnabled);
     const userId = useSelector(state => state.auth.user?.id);
     const timerRef = useRef(null);
     const [patternAnswers, setPatternAnswers] = useState({});
     const [showConfetti, setShowConfetti] = useState(false);
+    const [notice, setNotice] = useState(null);
+    const [newBadges, setNewBadges] = useState([]);
+    const [shareText, setShareText] = useState(null);
+    const [solvedThisVisit, setSolvedThisVisit] = useState(false);
+    const [freezeEarned, setFreezeEarned] = useState(false);
 
+    const isFree = typeParam !== undefined;
+    const isPractice = dateParam !== undefined;
+    const mode = isFree ? 'free' : isPractice ? 'practice' : 'daily';
+    const isDaily = mode === 'daily';
+    const practiceDate = isPractice ? validPracticeDate(dateParam) : null;
+    const freeSpec = isFree && PUZZLE_TYPES.includes(typeParam) && FREE_PLAY_LEVELS[levelParam] !== undefined
+        && /^\d{1,9}$/.test(seedParam || '')
+        ? { type: typeParam, level: levelParam, seed: Number(seedParam) }
+        : null;
     const todayDate = getTodayDateString();
-    const alreadySolved = stats.heatmapData[todayDate] > 0;
+    // Puzzle ids: the date (daily and practice) or free:type:level:seed
+    const puzzleId = isFree
+        ? (freeSpec ? `free:${freeSpec.type}:${freeSpec.level}:${freeSpec.seed}` : null)
+        : isPractice ? practiceDate : todayDate;
+    const todaysEntry = stats.history[todayDate];
+    const alreadySolved = isDaily && Boolean(todaysEntry);
 
+    // Today's puzzle already started (in the store, or set aside while the player practiced)?
+    const dailyInProgress = isDaily && (
+        (game.mode === 'daily' && game.currentPuzzle?.id === todayDate)
+        || game.dailyStash?.currentPuzzle?.id === todayDate
+    );
+    // Not started yet: the player picks a difficulty first
+    const needsPicker = isDaily && stats.hydrated && !alreadySolved && !dailyInProgress;
+
+    // Open the puzzle, but only once the player's session has finished loading (`hydrated`). Effects
+    // run child-first, so on a direct page load or refresh the app-level effect resets the game AFTER
+    // this one would have loaded it, leaving a blank "Loading" screen. Waiting for `hydrated`
+    // guarantees that reset already happened. (For daily it's also how we know whether today is
+    // already solved.) The reducer resumes an in-progress puzzle instead of restarting it, so leaving
+    // the page can't reset the timer or hints.
+    const ready = Boolean(puzzleId) && stats.hydrated && !alreadySolved && (!isDaily || dailyInProgress);
     useEffect(() => {
-        dispatch(resetGame());
+        if (!ready) return;
         setPatternAnswers({});
-    }, [userId]);
+        setNotice(null);
+        setSolvedThisVisit(false);
+        setNewBadges([]);
+        setShareText(null);
+        setFreezeEarned(false);
+        let puzzle;
+        let difficulty = null;
+        if (isFree) {
+            puzzle = generatePuzzleOfType(freeSpec.type, freeSpec.seed, freeSpec.level);
+            difficulty = FREE_LEVEL_TO_DIFFICULTY[freeSpec.level];
+        } else {
+            puzzle = generatePuzzle(puzzleId);
+            if (isPractice) difficulty = PRACTICE_DIFFICULTY;
+        }
+        dispatch(loadPuzzle({ puzzle, mode, difficulty }));
+    }, [userId, puzzleId, mode, ready, dispatch]);
 
-    const handleSelectDifficulty = (level) => {
-        dispatch(setDifficulty(level.key));
-        const puzzle = generatePuzzle(todayDate, level.modifier);
-        dispatch(setPuzzle(puzzle));
-        // Note: hintsRemaining is set to MAX_HINTS in setPuzzle,
-        // but we respect HINT_ALLOWANCE per difficulty
-    };
-
+    // Timer
     useEffect(() => {
         if (game.timerRunning) {
-            timerRef.current = setInterval(() => {
-                dispatch(tickTimer());
-            }, 1000);
+            timerRef.current = setInterval(() => dispatch(tickTimer()), 1000);
         }
         return () => clearInterval(timerRef.current);
     }, [game.timerRunning, dispatch]);
 
-    const formatTime = (s) => {
-        const mins = Math.floor(s / 60);
-        const secs = s % 60;
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    const handleSelectDifficulty = (level) => {
+        dispatch(loadPuzzle({
+            puzzle: generatePuzzle(todayDate, level.modifier),
+            mode: 'daily',
+            difficulty: level.key,
+        }));
     };
 
-    const handleAnswer = useCallback((answer, roundIdx) => {
+    function handleAnswer(answer, roundIdx) {
+        setNotice(null);
         const puzzle = game.currentPuzzle;
-        if (!puzzle) return;
-        if (puzzle.type === 'patternMatch') {
-            setPatternAnswers(prev => ({ ...prev, [roundIdx]: answer }));
-            dispatch(updateAnswer({ ...patternAnswers, [roundIdx]: answer }));
-        } else {
-            dispatch(updateAnswer(answer));
+        if (puzzle?.type === 'patternMatch') {
+            const next = { ...patternAnswers, [roundIdx]: answer };
+            setPatternAnswers(next);
+            dispatch(updateAnswer(next));
+            return;
         }
-    }, [dispatch, game.currentPuzzle, patternAnswers]);
+        dispatch(updateAnswer(answer));
+        // Puzzles with live feedback have no Submit button: they finish the moment they're right.
+        if (puzzle?.autoCheck && !store.getState().game.solved && checkPuzzle(puzzle, answer)) {
+            finishSolve();
+        }
+    }
 
-    const handleSubmit = () => {
+    function handleSubmit() {
         const puzzle = game.currentPuzzle;
-        if (!puzzle) return;
+        if (!puzzle || game.solved) return;
 
-        let isCorrect = false;
-        switch (puzzle.type) {
-            case 'numberMatrix':
-                isCorrect = validateSolution('numberMatrix', game.userAnswer, puzzle);
-                break;
-            case 'patternMatch':
-                isCorrect = validateSolution('patternMatch', patternAnswers, puzzle);
-                break;
-            case 'sequenceSolver':
-                isCorrect = validateSolution('sequenceSolver', game.userAnswer, puzzle);
-                break;
-            case 'deductionGrid':
-                isCorrect = validateSolution('deductionGrid', game.userAnswer, puzzle.solution);
-                break;
-            case 'binaryLogic':
-                isCorrect = validateSolution('binaryLogic', game.userAnswer, puzzle);
-                break;
+        const isPattern = puzzle.type === 'patternMatch';
+        const hasAnswer = isPattern ? Object.keys(patternAnswers).length > 0 : hasAnyAnswer(puzzle, game.userAnswer);
+        if (!hasAnswer) {
+            setNotice('Fill in your answer before submitting.');
+            return;
         }
 
-        if (isCorrect) {
-            dispatch(markSolved());
-            dispatch(stopTimer());
-            setShowConfetti(true);
-            setTimeout(() => setShowConfetti(false), 3500);
-
-            const points = calculateFinalScore(game.hintsUsed, game.timerSeconds);
-            dispatch(recordSolve({
-                date: todayDate,
-                points,
-                timeSeconds: game.timerSeconds,
-                puzzleType: puzzle.type,
-                noMistakes: game.hintsUsed === 0,
-            }));
-
-            setTimeout(async () => {
-                const state = window.__REDUX_STORE__?.getState();
-                const currentUserId = state?.auth?.user?.id;
-                if (state && currentUserId) {
-                    await saveAllState(currentUserId, state.stats, state.settings);
-                    await saveDailyActivity(currentUserId, {
-                        date: todayDate, solved: true, score: points,
-                        puzzleType: puzzle.type, timeSeconds: game.timerSeconds,
-                        hintsUsed: game.hintsUsed, noMistakes: game.hintsUsed === 0,
-                    });
-                    const token = state.auth.token;
-                    await syncDailyActivity(currentUserId, token);
-                    if (navigator.onLine && token) {
-                        const apiUrl = import.meta.env.VITE_API_URL || '/api';
-                        try {
-                            await fetch(`${apiUrl}/stats/sync`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                                body: JSON.stringify({ stats: state.stats }),
-                            });
-                        } catch { }
-                    }
-                }
-            }, 500);
-        } else {
+        const answer = isPattern ? patternAnswers : game.userAnswer;
+        if (!checkPuzzle(puzzle, answer)) {
             dispatch(markFailed());
+            return;
         }
-    };
+        finishSolve();
+    }
 
-    /**
-     * useHint() — Finds the first incorrect/empty cell and reveals the correct value.
-     * Uses puzzle-type-specific logic from the engine.
-     * Dispatches addHintedCell so the renderer can animate with Bluestock Orange.
-     */
+    // Records a correct solution. Reads the latest game state from the store, so
+    // it is safe to call from a renderer's event handler.
+    async function finishSolve() {
+        const g = store.getState().game;
+        const puzzle = g.currentPuzzle;
+        if (!puzzle || g.solved) return;
+
+        const timeSeconds = g.timerSeconds;
+        const points = computePoints({
+            hintsUsed: g.hintsUsed, mistakes: g.mistakes, timeSeconds, puzzleType: puzzle.type,
+        });
+        dispatch(markSolved({ points }));
+        setSolvedThisVisit(true);
+        setShowConfetti(true);
+        setTimeout(() => setShowConfetti(false), 3500);
+
+        const { auth } = store.getState();
+
+        // Free play never touches stats, history or the leaderboard.
+        if (isFree) return;
+
+        // Practice: kept on this device only. No streak, history or leaderboard.
+        if (isPractice) {
+            savePracticeResult(auth.user?.id, puzzle.date, { points, timeSeconds })
+                .catch(err => console.warn('Could not save practice result:', err));
+            return;
+        }
+
+        // A day counts once. Guards against recording twice (e.g. two tabs).
+        if (store.getState().stats.history[todayDate]) return;
+
+        const entry = {
+            date: todayDate,
+            points,
+            puzzleType: puzzle.type,
+            timeSeconds,
+            hintsUsed: g.hintsUsed,
+            mistakes: g.mistakes,
+            noMistakes: g.mistakes === 0,
+            solvedAt: new Date().toISOString(),
+        };
+
+        const before = new Set(store.getState().stats.achievements);
+        dispatch(recordSolve(entry));
+        const after = store.getState().stats;
+        setNewBadges(ACHIEVEMENTS.filter(a => after.achievements.includes(a.id) && !before.has(a.id)));
+        setFreezeEarned(after.freezeEarnedDates.includes(todayDate));
+        setShareText(buildShareText({ ...entry, streak: after.currentStreak }));
+
+        // Save on the device first (works offline), then back up to the server.
+        if (!auth.user?.id) return;
+        try {
+            await saveDailyActivity(auth.user.id, entry);
+        } catch (err) {
+            console.error('Could not save solve locally:', err);
+        }
+        dispatch(setSyncStatus('syncing'));
+        dispatch(setSyncStatus(await syncDailyActivity(auth.user.id, auth.token, after.achievements)));
+    }
+
+    // Hints are limited per difficulty (novice 3, intermediate 2, expert 1) and cost 10% of the score each.
+    const allowance = HINT_ALLOWANCE[game.selectedDifficulty] || MAX_HINTS;
+    const hintsLeft = Math.max(0, allowance - game.hintsUsed);
+
     const handleHint = () => {
-        // Check difficulty-based hint allowance
-        const allowance = HINT_ALLOWANCE[game.selectedDifficulty] || MAX_HINTS;
-        if (game.hintsUsed >= allowance) return;
-        if (game.hintsRemaining <= 0) return;
-
         const puzzle = game.currentPuzzle;
-        if (!puzzle) return;
+        if (!puzzle || hintsLeft <= 0 || game.hintsRemaining <= 0) return;
 
-        let hintData = null;
-
-        switch (puzzle.type) {
-            case 'numberMatrix': {
-                // Find first empty or incorrect cell and reveal correct value
-                const userGrid = game.userAnswer || puzzle.puzzle;
-                const solution = puzzle.solution;
-                const size = puzzle.size;
-                for (let r = 0; r < size && !hintData; r++) {
-                    for (let c = 0; c < size && !hintData; c++) {
-                        if (!puzzle.given[r][c]) {
-                            const userVal = userGrid?.[r]?.[c] || 0;
-                            if (userVal !== solution[r][c]) {
-                                hintData = { type: 'cell', row: r, col: c, value: solution[r][c] };
-                            }
-                        }
-                    }
-                }
-                break;
+        // The original games reveal the value right on the board (their renderers highlight it)
+        if (REVEAL_HINT_TYPES.has(puzzle.type)) {
+            const data = computeRevealHint(puzzle, {
+                userAnswer: game.userAnswer, currentRound: game.currentRound, hintsUsed: game.hintsUsed,
+            });
+            if (data) {
+                setNotice(null);
+                dispatch(useHint());
+                dispatch(addHintedCell(data));
+            } else {
+                setNotice('There is nothing left to reveal.');
             }
-            case 'sequenceSolver': {
-                // Find first unfilled blank
-                const rounds = puzzle.rounds;
-                for (let ri = 0; ri < rounds.length && !hintData; ri++) {
-                    const round = rounds[ri];
-                    for (let bi = 0; bi < round.blanks.length && !hintData; bi++) {
-                        const key = `${ri}-${bi}`;
-                        const userVal = game.userAnswer?.[key];
-                        const correctVal = round.sequence[round.blanks[bi]];
-                        if (!userVal || parseInt(userVal) !== correctVal) {
-                            hintData = { type: 'sequence', key, value: correctVal };
-                        }
-                    }
-                }
-                break;
-            }
-            case 'binaryLogic': {
-                // Find first unanswered gate
-                for (const q of puzzle.questions) {
-                    const userVal = game.userAnswer?.[q.gateId];
-                    if (userVal === undefined || userVal === '' || parseInt(userVal) !== q.answer) {
-                        hintData = { type: 'gate', gateId: q.gateId, value: q.answer };
-                        break;
-                    }
-                }
-                break;
-            }
-            case 'deductionGrid': {
-                // Reveal one correct assignment
-                const solution = puzzle.solution.assignments;
-                const names = Object.keys(solution);
-                for (const name of names) {
-                    const userAssign = game.userAnswer?.[name];
-                    if (!userAssign || userAssign.color !== solution[name].color || userAssign.item !== solution[name].item) {
-                        hintData = { type: 'assignment', name, ...solution[name] };
-                        break;
-                    }
-                }
-                break;
-            }
-            case 'patternMatch': {
-                // Eliminate one wrong option in current round
-                const round = puzzle.rounds[game.currentRound];
-                if (round) {
-                    const wrongIndices = round.options
-                        .map((_, i) => i)
-                        .filter(i => i !== round.answerIndex);
-                    if (wrongIndices.length > 0) {
-                        hintData = { type: 'eliminate', eliminateIndex: wrongIndices[game.hintsUsed % wrongIndices.length] };
-                    }
-                }
-                break;
-            }
+            return;
         }
 
-        if (hintData) {
-            dispatch(useHint());
-            dispatch(addHintedCell(hintData));
+        // The newer games show a short text hint, and point at the spot on the board
+        const hint = buildHint(puzzle, game.hintsUsed, { userAnswer: game.userAnswer });
+        if (!hint) {
+            setNotice('There is nothing left to reveal.');
+            return;
         }
+        if (hint.free) {
+            setNotice(hint.text);
+            return;
+        }
+        setNotice(null);
+        dispatch(useHint(hint));
     };
 
-    // Already solved today
-    if (alreadySolved && !game.currentPuzzle) {
+    if (isPractice && !practiceDate) {
+        return <Navigate to="/practice" replace />;
+    }
+    if (isFree && !freeSpec) {
+        return <Navigate to="/free" replace />;
+    }
+
+    if (!stats.hydrated) {
+        return (
+            <div className="flex-center" style={{ minHeight: '60vh' }}>
+                <div className="text-muted">Loading your progress…</div>
+            </div>
+        );
+    }
+
+    // Already solved today (unless it was solved just now: then the result dialog shows)
+    if (alreadySolved && !solvedThisVisit) {
+        const todaysShare = buildShareText({ ...todaysEntry, streak: stats.currentStreak });
         return (
             <motion.div
                 className="flex-center flex-col"
-                style={{ minHeight: '60vh', gap: '16px' }}
+                style={{ minHeight: '60vh', gap: '16px', textAlign: 'center' }}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
             >
@@ -347,16 +447,27 @@ export default function Play() {
                     <CheckCircle size={56} strokeWidth={1.5} />
                 </div>
                 <h2>Today's Challenge Complete</h2>
-                <p className="text-muted" style={{ fontSize: '0.85rem' }}>Come back tomorrow for a new challenge</p>
-                <button className="btn btn-primary" onClick={() => navigate('/')}>
-                    <ArrowLeft size={16} strokeWidth={1.5} /> Back Home
-                </button>
+                <ResultSquares hintsUsed={todaysEntry.hintsUsed} mistakes={todaysEntry.mistakes} />
+                <p className="text-muted" style={{ fontSize: '0.85rem' }}>
+                    You scored <strong>{todaysEntry.points}</strong> points
+                    {stats.currentStreak > 1 && <> · {stats.currentStreak}-day streak</>}
+                </p>
+                <NextPuzzleCountdown />
+                <div className="flex-center gap-8" style={{ flexWrap: 'wrap' }}>
+                    <ShareButton text={todaysShare} className="btn btn-primary" />
+                    <button className="btn btn-secondary" onClick={() => navigate('/practice')}>
+                        <CalendarDays size={16} strokeWidth={1.5} /> Practice past puzzles
+                    </button>
+                    <button className="btn btn-secondary" onClick={() => navigate('/leaderboard')}>
+                        <BarChart3 size={16} strokeWidth={1.5} /> Today's ranks
+                    </button>
+                </div>
             </motion.div>
         );
     }
 
-    // Difficulty selection screen
-    if (!game.currentPuzzle) {
+    // Difficulty selection screen (today's puzzle, not started yet)
+    if (needsPicker && !solvedThisVisit) {
         const puzzleType = getPuzzleTypeForDate(todayDate);
         return (
             <motion.div
@@ -423,28 +534,88 @@ export default function Play() {
         );
     }
 
+    // Wait until the requested puzzle is the one in the store (avoids a flash of
+    // the previous puzzle when switching between days).
+    if (!game.currentPuzzle || game.currentPuzzle.id !== puzzleId || game.mode !== mode) {
+        return (
+            <div className="flex-center" style={{ minHeight: '60vh' }}>
+                <div className="text-muted">Loading puzzle…</div>
+            </div>
+        );
+    }
+
     const puzzle = game.currentPuzzle;
 
     const renderPuzzle = () => {
+        // key: remount inputs when the puzzle changes so no answers carry over
+        const key = `${mode}-${puzzle.id}`;
+        const highlight = game.highlight;
         switch (puzzle.type) {
             case 'numberMatrix':
-                return <NumberMatrixRenderer puzzle={puzzle} onAnswer={handleAnswer} />;
+                return <NumberMatrixRenderer key={key} puzzle={puzzle} onAnswer={handleAnswer} />;
             case 'patternMatch':
-                return <PatternMatchRenderer puzzle={puzzle} onAnswer={handleAnswer} currentRound={game.currentRound} />;
+                return <PatternMatchRenderer key={key} puzzle={puzzle} onAnswer={handleAnswer} currentRound={game.currentRound} />;
             case 'sequenceSolver':
-                return <SequenceSolverRenderer puzzle={puzzle} onAnswer={handleAnswer} />;
+                return <SequenceSolverRenderer key={key} puzzle={puzzle} onAnswer={handleAnswer} />;
             case 'deductionGrid':
-                return <DeductionGridRenderer puzzle={puzzle} onAnswer={handleAnswer} />;
+                return <DeductionGridRenderer key={key} puzzle={puzzle} onAnswer={handleAnswer} />;
             case 'binaryLogic':
-                return <BinaryLogicRenderer puzzle={puzzle} onAnswer={handleAnswer} />;
+                return <BinaryLogicRenderer key={key} puzzle={puzzle} onAnswer={handleAnswer} />;
+            case 'switchboard':
+                return <SwitchboardRenderer key={key} puzzle={puzzle} onAnswer={handleAnswer} highlight={highlight} />;
+            case 'laserPath':
+                return <LaserPathRenderer key={key} puzzle={puzzle} onAnswer={handleAnswer} highlight={highlight} />;
+            case 'measureUp':
+                return <MeasureUpRenderer key={key} puzzle={puzzle} onAnswer={handleAnswer} highlight={highlight} />;
+            case 'balanceScale':
+                return <BalanceScaleRenderer key={key} puzzle={puzzle} onAnswer={handleAnswer} highlight={highlight} />;
+            case 'pixelLogic':
+                return <PixelLogicRenderer key={key} puzzle={puzzle} onAnswer={handleAnswer} highlight={highlight} />;
+            case 'numberTrail':
+                return <NumberTrailRenderer key={key} puzzle={puzzle} onAnswer={handleAnswer} highlight={highlight} />;
+            case 'letterLock':
+                return (
+                    <LetterLockRenderer
+                        key={key}
+                        puzzle={puzzle}
+                        onAnswer={handleAnswer}
+                        onFail={() => dispatch(markFailed())}
+                        attempt={game.mistakes}
+                    />
+                );
             default:
                 return <div>Unknown puzzle type</div>;
         }
     };
 
+    const difficultyBadge = DIFFICULTY_LABEL[game.selectedDifficulty] || difficultyLabel(puzzle.difficulty);
+
     return (
         <div>
             {showConfetti && <Confetti />}
+
+            {isFree && (
+                <div className="practice-banner">
+                    <span>
+                        <strong>Free play</strong> · Unlimited puzzles. Doesn't affect your streak or the leaderboard.
+                    </span>
+                    <Link to="/free" className="practice-banner-link">
+                        <ArrowLeft size={14} strokeWidth={1.5} /> All games
+                    </Link>
+                </div>
+            )}
+
+            {isPractice && (
+                <div className="practice-banner">
+                    <span>
+                        <strong>Practice</strong> · Puzzle #{puzzleNumber(puzzle.date)} from {dayjs(puzzle.date).format('MMM D, YYYY')}.
+                        Doesn't affect your streak or the leaderboard.
+                    </span>
+                    <Link to="/practice" className="practice-banner-link">
+                        <ArrowLeft size={14} strokeWidth={1.5} /> Archive
+                    </Link>
+                </div>
+            )}
 
             {/* Floating status bar */}
             <div className="play-header">
@@ -454,22 +625,41 @@ export default function Play() {
                     </span>
                     <div>
                         <div style={{ fontWeight: 700, fontSize: '0.9rem' }}>{PUZZLE_LABELS[puzzle.type]}</div>
-                        <div className="text-muted" style={{ fontSize: '0.72rem' }}>{todayDate}</div>
+                        <div className="text-muted" style={{ fontSize: '0.72rem' }}>
+                            {isFree ? `Free play · puzzle ${puzzle.seed}` : `#${puzzleNumber(puzzle.date)} · ${puzzle.date}`}
+                        </div>
                     </div>
-                    <span className="badge badge-difficulty">
-                        {game.selectedDifficulty || 'D' + puzzle.difficulty}
-                    </span>
+                    <span className="badge badge-difficulty">{difficultyBadge}</span>
                 </div>
                 <div className="play-actions">
-                    <div className="timer-bar">
-                        <span className="timer-icon"><Clock size={14} strokeWidth={1.5} /></span>
-                        {formatTime(game.timerSeconds)}
-                    </div>
+                    {timerEnabled && (
+                        <div className="timer-bar">
+                            <span className="timer-icon"><Clock size={14} strokeWidth={1.5} /></span>
+                            {formatClock(game.timerSeconds)}
+                        </div>
+                    )}
+                    {game.mistakes > 0 && (
+                        <span className="badge" title="Each wrong submission costs 10 points">
+                            {game.mistakes} mistake{game.mistakes === 1 ? '' : 's'}
+                        </span>
+                    )}
                 </div>
             </div>
 
             {/* How to Play accordion */}
             <HowToPlay puzzleType={puzzle.type} />
+
+            {/* Revealed text hints (the newer games) */}
+            {game.hints.length > 0 && (
+                <div className="hint-list" aria-live="polite">
+                    {game.hints.map((text, i) => (
+                        <div key={i} className="hint-item">
+                            <Lightbulb size={16} strokeWidth={1.5} />
+                            <span>{text}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {/* Puzzle Area */}
             <motion.div
@@ -479,6 +669,8 @@ export default function Play() {
             >
                 {renderPuzzle()}
             </motion.div>
+
+            {notice && <p className="play-notice" role="status">{notice}</p>}
 
             {/* Action Buttons */}
             {!game.showResult && (
@@ -490,10 +682,16 @@ export default function Play() {
                 >
                     <button
                         className="btn btn-secondary btn-sm"
-                        onClick={handleHint}
-                        disabled={game.hintsUsed >= (HINT_ALLOWANCE[game.selectedDifficulty] || MAX_HINTS) || game.hintsRemaining <= 0}
+                        onClick={(e) => {
+                            handleHint();
+                            // After a mouse click, drop focus so a later Enter key press (Letter Lock
+                            // submits guesses with Enter) doesn't re-trigger this button.
+                            if (e.detail > 0) e.currentTarget.blur();
+                        }}
+                        disabled={hintsLeft <= 0 || game.hintsRemaining <= 0}
+                        title="Each hint reduces your score by 10%"
                     >
-                        <Lightbulb size={16} strokeWidth={1.5} /> Hint ({(HINT_ALLOWANCE[game.selectedDifficulty] || MAX_HINTS) - game.hintsUsed}/{HINT_ALLOWANCE[game.selectedDifficulty] || MAX_HINTS})
+                        <Lightbulb size={16} strokeWidth={1.5} /> Hint ({hintsLeft}/{allowance})
                     </button>
 
                     {puzzle.type === 'patternMatch' && game.currentRound < puzzle.totalRounds - 1 ? (
@@ -504,7 +702,7 @@ export default function Play() {
                         >
                             Next Round
                         </button>
-                    ) : (
+                    ) : puzzle.autoCheck ? null : (
                         <button className="btn btn-primary" onClick={handleSubmit}>
                             Submit Solution
                         </button>
@@ -534,52 +732,108 @@ export default function Play() {
                                 }
                             </div>
                             <div className="result-title">
-                                {game.solved ? 'Well Solved!' : 'Not Quite Right'}
+                                {game.solved
+                                    ? (isDaily ? 'Well Solved!' : isFree ? 'Solved!' : 'Practice complete')
+                                    : puzzle.type === 'letterLock' ? 'Out of guesses' : 'Not Quite Right'}
                             </div>
                             <p className="text-muted mb-16" style={{ fontSize: '0.85rem' }}>
-                                {game.solved
-                                    ? 'Challenge complete — great work!'
-                                    : 'Some answers were incorrect. Try again!'}
+                                {!game.solved
+                                    ? (puzzle.type === 'letterLock'
+                                        ? 'A fresh board is ready. Each board you run out of guesses on costs 10 points.'
+                                        : 'Some answers are incorrect. Your entries are kept; fix them and submit again (−10 points per wrong submission).')
+                                    : isFree
+                                        ? 'Nice one. Free play doesn\'t count toward streaks or ranks, so try another or a harder level.'
+                                        : isPractice
+                                            ? 'Nice practice. This score stays on this device and doesn\'t count toward streaks or ranks.'
+                                            : 'Challenge complete. Great work!'}
                             </p>
 
                             {game.solved && (
-                                <div className="result-stats">
-                                    <div className="result-stat">
-                                        <div className="result-stat-value">{formatTime(game.timerSeconds)}</div>
-                                        <div className="result-stat-label">Time</div>
-                                    </div>
-                                    <div className="result-stat">
-                                        <div className="result-stat-value">{game.hintsUsed}</div>
-                                        <div className="result-stat-label">Hints</div>
-                                    </div>
-                                    <div className="result-stat">
-                                        <div className="result-stat-value">
-                                            {calculateFinalScore(game.hintsUsed, game.timerSeconds)}
+                                <>
+                                    <ResultSquares hintsUsed={game.hintsUsed} mistakes={game.mistakes} />
+                                    <div className="result-stats">
+                                        <div className="result-stat">
+                                            <div className="result-stat-value">{formatClock(game.timerSeconds)}</div>
+                                            <div className="result-stat-label">Time</div>
                                         </div>
-                                        <div className="result-stat-label">Points</div>
+                                        <div className="result-stat">
+                                            <div className="result-stat-value">{game.hintsUsed}</div>
+                                            <div className="result-stat-label">Hints</div>
+                                        </div>
+                                        <div className="result-stat">
+                                            <div className="result-stat-value">{game.mistakes}</div>
+                                            <div className="result-stat-label">Mistakes</div>
+                                        </div>
+                                        <div className="result-stat">
+                                            <div className="result-stat-value">{game.earnedPoints}</div>
+                                            <div className="result-stat-label">Points</div>
+                                        </div>
                                     </div>
-                                </div>
+
+                                    {isDaily && stats.currentStreak > 0 && (
+                                        <div className="result-streak">
+                                            <Flame size={18} strokeWidth={1.5} />
+                                            {stats.currentStreak}-day streak
+                                        </div>
+                                    )}
+
+                                    {isDaily && freezeEarned && (
+                                        <div className="result-freeze">
+                                            <Snowflake size={16} strokeWidth={1.5} />
+                                            Streak freeze earned! If you miss a day, it saves your streak.
+                                        </div>
+                                    )}
+
+                                    {newBadges.length > 0 && (
+                                        <div className="result-badges">
+                                            {newBadges.map(b => (
+                                                <span key={b.id} className="result-badge">
+                                                    <AchievementIcon iconKey={b.icon} size={16} />
+                                                    {b.name}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    {isDaily && <NextPuzzleCountdown style={{ marginTop: '8px' }} />}
+                                </>
                             )}
 
-                            <div className="flex-center gap-8 mt-16">
-                                {game.solved ? (
-                                    <button className="btn btn-primary" onClick={() => navigate('/')}>
-                                        <ArrowLeft size={16} strokeWidth={1.5} /> Home
+                            <div className="flex-center gap-8 mt-16" style={{ flexWrap: 'wrap' }}>
+                                {!game.solved ? (
+                                    <button className="btn btn-primary" onClick={() => dispatch(retry())}>
+                                        <RotateCcw size={16} strokeWidth={1.5} /> Keep trying
                                     </button>
+                                ) : isFree ? (
+                                    <>
+                                        <button className="btn btn-primary"
+                                            onClick={() => navigate(`/free/${freeSpec.type}/${freeSpec.level}/${Math.floor(Math.random() * 1e6)}`)}>
+                                            <Dices size={16} strokeWidth={1.5} /> Another one
+                                        </button>
+                                        <button className="btn btn-secondary" onClick={() => navigate('/free')}>
+                                            <ArrowLeft size={16} strokeWidth={1.5} /> All games
+                                        </button>
+                                    </>
+                                ) : isPractice ? (
+                                    <>
+                                        <button className="btn btn-primary" onClick={() => navigate('/practice')}>
+                                            <CalendarDays size={16} strokeWidth={1.5} /> Back to archive
+                                        </button>
+                                        <button className="btn btn-secondary" onClick={() => navigate('/')}>
+                                            <ArrowLeft size={16} strokeWidth={1.5} /> Home
+                                        </button>
+                                    </>
                                 ) : (
-                                    <button
-                                        className="btn btn-primary"
-                                        onClick={() => {
-                                            dispatch(markFailed());
-                                            dispatch(setPuzzle(game.currentPuzzle));
-                                        }}
-                                    >
-                                        <RotateCcw size={16} strokeWidth={1.5} /> Try Again
-                                    </button>
+                                    <>
+                                        {shareText && <ShareButton text={shareText} className="btn btn-primary" />}
+                                        <button className="btn btn-secondary" onClick={() => navigate('/practice')}>
+                                            <CalendarDays size={16} strokeWidth={1.5} /> Practice more
+                                        </button>
+                                        <button className="btn btn-secondary" onClick={() => navigate('/stats')}>
+                                            <BarChart3 size={16} strokeWidth={1.5} /> Stats
+                                        </button>
+                                    </>
                                 )}
-                                <button className="btn btn-secondary" onClick={() => navigate('/stats')}>
-                                    <BarChart3 size={16} strokeWidth={1.5} /> Stats
-                                </button>
                             </div>
                         </motion.div>
                     </motion.div>
