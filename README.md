@@ -11,9 +11,14 @@
 ---
 
 ## 🎮 Features
-* **365 Unique Puzzles:** Pre-generated puzzles stored client-side for a full year of content.
-* **Deterministic Generation:** Puzzles are generated locally based on a date seed, ensuring every user plays the same puzzle daily without server calls.
-* **Offline Support:** Full functionality without an internet connection using IndexedDB for local progress persistence.
+* **11 Puzzle Types:** Number Matrix, Sequence Solver, Deduction Grid, Binary Logic, plus **Switchboard** (lights-out), **Laser Path** (steer a beam with mirrors), **Measure Up** (jug puzzles), **Balance Scales** (live-tilting algebra), **Pixel Logic** (nonogram), **Number Trail** (one-path puzzle) and **Letter Lock** (a daily five-letter word with green/yellow/grey feedback). Most of the newer ones check themselves the moment you solve them.
+* **Provably Fair Puzzles:** Every generated puzzle is verified: a unique solution, solvable by reasoning (no guessing), with hints that lead somewhere.
+* **Deterministic Generation:** Puzzles are generated locally based on a date seed, ensuring every user plays the same puzzle daily without server calls. Difficulty follows the week: easy on Monday, hard on Sunday.
+* **Streak Freezes:** Every 7 days in a row earns a freeze (hold up to 2) that automatically protects your streak if you miss a day.
+* **Practice Archive & Free Play:** Replay any puzzle from the past year, or play unlimited puzzles of any type and difficulty. Neither affects your streak or the leaderboard.
+* **Share Grid:** Wordle-style, spoiler-free result sharing.
+* **Leaderboard:** Today, this week, and all time.
+* **Never Lose Progress:** Solve history is the single source of truth, backed up to the server and merged (never overwritten) across devices; it works offline and syncs when you're back online.
 * **User-Scoped Progress:** Intelligent state management that prevents data leakage between different user accounts on the same device.
 * **Interactive UI:** Smooth transitions and feedback powered by Framer Motion and a professional navy/cyan color palette.
 

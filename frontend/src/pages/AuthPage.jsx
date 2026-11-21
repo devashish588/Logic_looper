@@ -25,7 +25,7 @@ export default function AuthPage() {
 
     const dispatch = useDispatch();
     const navigate = useNavigate();
-    const { loading, error, isAuthenticated } = useSelector(state => state.auth);
+    const { loading, error, notice, isAuthenticated } = useSelector(state => state.auth);
 
     // If already authenticated, redirect to home
     useEffect(() => {
@@ -186,6 +186,11 @@ export default function AuthPage() {
                         transition={{ type: 'spring', stiffness: 400, damping: 30 }}
                     />
                 </div>
+
+                {/* Notice (e.g. session expired) */}
+                {notice && !error && (
+                    <div className="auth-notice" role="status">{notice}</div>
+                )}
 
                 {/* Error Message */}
                 <AnimatePresence>

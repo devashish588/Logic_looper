@@ -24,6 +24,7 @@ function getIntensityColor(score) {
 }
 
 const PULSE_COLOR = '#414BEA';
+const FREEZE_COLOR = 'var(--freeze-color)'; // a day a streak freeze covered
 
 /**
  * HeatmapCell with:
@@ -38,6 +39,8 @@ const HeatmapCell = React.memo(function HeatmapCell({
     intensity,
     puzzleType,
     isToday,
+    frozen,
+    onSelect,
     justSolved,
     weekIndex,
     totalWeeks,
@@ -45,7 +48,9 @@ const HeatmapCell = React.memo(function HeatmapCell({
     const [hovered, setHovered] = useState(false);
     const wrapperRef = useRef(null);
 
-    const bgColor = getIntensityColor(score);
+    const bgColor = frozen ? FREEZE_COLOR : getIntensityColor(score);
+    const clickable = Boolean(onSelect);
+    const touchedAt = useRef(0);
 
     // Edge detection: flip tooltip when in the last 10 weeks
     const isNearRightEdge = totalWeeks - weekIndex <= 10;
@@ -60,9 +65,11 @@ const HeatmapCell = React.memo(function HeatmapCell({
         setTimeout(() => setHovered(false), 2200);
     }, []);
 
-    const difficultyLabel = puzzleType
-        ? puzzleType.replace(/([A-Z])/g, ' $1').trim()
-        : 'No activity';
+    const difficultyLabel = frozen
+        ? 'Streak freeze used'
+        : puzzleType
+            ? puzzleType.replace(/([A-Z])/g, ' $1').trim()
+            : 'No activity';
 
     // Tooltip position classes
     const tooltipAlign = isNearRightEdge
@@ -74,10 +81,16 @@ const HeatmapCell = React.memo(function HeatmapCell({
     return (
         <div
             ref={wrapperRef}
-            className="heatmap-cell-wrapper"
+            className={`heatmap-cell-wrapper ${clickable ? 'clickable' : ''}`}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
-            onTouchStart={handleTouchStart}
+            onTouchStart={(e) => { touchedAt.current = Date.now(); handleTouchStart(e); }}
+            // Click opens that day's puzzle for practice. A tap on a phone only shows the tooltip.
+            onClick={clickable ? () => { if (Date.now() - touchedAt.current > 700) onSelect(date); } : undefined}
+            onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(date); } } : undefined}
+            role={clickable ? 'button' : undefined}
+            tabIndex={clickable ? 0 : undefined}
+            aria-label={clickable ? `${date}: ${difficultyLabel}${score ? `, ${score} points` : ''}. Open puzzle` : undefined}
         >
             <motion.div
                 className={`heatmap-cell ${isToday ? 'heatmap-cell-today' : ''}`}

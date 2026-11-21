@@ -1,109 +1,156 @@
-import { getUnsyncedEntries, markEntriesSynced } from '../storage/activityStore.js';
+import { getDailyActivity, getUnsyncedEntries, markEntriesSynced, putActivityEntries } from '../storage/activityStore.js';
+import { loadLegacyStats } from '../storage/db.js';
+import { normalizeEntry, isBetterEntry, entriesFromHeatmap } from './statsCalculator.js';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+// Relative by default: in production the API is served from the same origin (Vercel), and in dev
+// Vite proxies /api to the backend (see vite.config.js).
+export const API_URL = import.meta.env?.VITE_API_URL || '/api';
+
+export class UnauthorizedError extends Error {
+    constructor() {
+        super('Session expired');
+        this.name = 'UnauthorizedError';
+    }
+}
+
+// A request that takes longer than this is treated as "can't reach the server": the app carries on
+// with what is saved on the device instead of waiting forever on a stalled connection.
+const READ_TIMEOUT_MS = 15000;
+const WRITE_TIMEOUT_MS = 45000; // uploading a long history takes longer
+
+async function api(path, token, options = {}, timeoutMs = READ_TIMEOUT_MS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const res = await fetch(`${API_URL}${path}`, {
+            ...options,
+            signal: controller.signal,
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+                ...(options.headers || {}),
+            },
+        });
+        if (res.status === 401) throw new UnauthorizedError();
+        if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+        return await res.json();
+    } finally {
+        clearTimeout(timer);
+    }
+}
+
+function toServerEntry(e) {
+    return {
+        date: e.date,
+        puzzleType: e.puzzleType,
+        points: e.points,
+        timeSeconds: e.timeSeconds,
+        hintsUsed: e.hintsUsed,
+        mistakes: e.mistakes,
+        noMistakes: e.noMistakes,
+        solvedAt: e.solvedAt,
+        legacy: e.legacy,
+    };
+}
 
 /**
- * Fetch aggregated stats from the backend — single source of truth.
- * The backend recomputes totals, streaks, and achievements from DailyScore history.
+ * Push every not-yet-synced local solve to the backend. Safe to call any time:
+ * the server merges (never lowers or deletes), so retries are harmless.
  *
- * @param {string} userId
- * @param {string} token — JWT auth token
- * @returns {Promise<object|null>} aggregated stats or null on failure
+ * @returns {Promise<'synced' | 'offline' | 'unauthorized' | 'error'>}
  */
-export async function fetchAggregatedStats(userId, token) {
-    if (!userId || !token) return null;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return null;
+export async function syncDailyActivity(userId, token, achievements = []) {
+    if (!userId || !token) return 'error';
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return 'offline';
 
     try {
-        const res = await fetch(`${API_URL}/stats/${userId}`, {
-            headers: { 'Authorization': `Bearer ${token}` },
-        });
-        if (res.ok) {
-            return await res.json();
-        }
-        console.warn('Failed to fetch aggregated stats:', res.status);
-        return null;
+        const unsynced = (await getUnsyncedEntries(userId)).map(normalizeEntry).filter(Boolean);
+        if (unsynced.length === 0 && achievements.length === 0) return 'synced';
+
+        await api('/stats/batch-sync', token, {
+            method: 'POST',
+            body: JSON.stringify({ entries: unsynced.map(toServerEntry), achievements }),
+        }, WRITE_TIMEOUT_MS);
+        await markEntriesSynced(userId, unsynced.map(e => e.date));
+        return 'synced';
     } catch (err) {
-        console.warn('fetchAggregatedStats error:', err);
-        return null;
+        if (err instanceof UnauthorizedError) return 'unauthorized';
+        console.warn('Sync failed (offline?):', err);
+        return typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'error';
     }
 }
 
 /**
- * Sync stats to backend after a solve.
- * Posts the stats and returns fresh aggregated stats from backend.
+ * Build the complete history for a user by merging every place progress may live:
+ *   1. the server (DailyScore rows)
+ *   2. this device's `daily_activity` records (incl. ones that never synced
+ *      because of the v1.0 sync bug)
+ *   3. the v1.0 `stats::{userId}` snapshot's heatmapData, which held all history
+ *      from before `daily_activity` existed
+ * Days the server is missing are written locally as unsynced and pushed up.
  *
- * @param {object} stats — current stats state
- * @param {string} token — JWT auth token
- * @returns {Promise<object|null>} fresh aggregated stats or null
+ * @returns {Promise<{ entries, achievements, status, recoveredCount }>}
  */
-export async function syncStatsToBackend(stats, token) {
-    if (!token) return null;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return null;
-
+export async function hydrateUserProgress(userId, token) {
+    let status = 'synced';
+    let server = null;
     try {
-        const res = await fetch(`${API_URL}/stats/sync`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify({ stats }),
-        });
-        if (res.ok) {
-            return await res.json();
-        }
-        return null;
-    } catch {
-        return null;
+        if (typeof navigator !== 'undefined' && !navigator.onLine) throw new Error('offline');
+        server = await api('/stats/me', token);
+    } catch (err) {
+        status = err instanceof UnauthorizedError ? 'unauthorized' : 'offline';
     }
+
+    const merged = new Map(); // date -> { ...entry, synced }
+    const offer = (entry, synced) => {
+        if (!entry) return;
+        const prev = merged.get(entry.date);
+        if (isBetterEntry(entry, prev)) merged.set(entry.date, { ...entry, synced });
+    };
+
+    const serverDates = new Set();
+    for (const row of server?.history || []) {
+        const e = normalizeEntry(row);
+        if (e) { serverDates.add(e.date); offer(e, true); }
+    }
+
+    // Local records: only trust their `synced` flag if we couldn't reach the
+    // server. If the server is reachable and lacks the day, it must be re-sent.
+    const localRecords = await getDailyActivity(userId).catch(() => []);
+    for (const rec of localRecords) {
+        const e = normalizeEntry(rec);
+        if (e) offer(e, server ? serverDates.has(e.date) && Boolean(rec.synced) : Boolean(rec.synced));
+    }
+
+    const legacy = await loadLegacyStats(userId).catch(() => null);
+    for (const e of entriesFromHeatmap(legacy?.heatmapData)) offer(e, false);
+
+    // Persist the merged view locally so the device has the full history offline.
+    const localByDate = new Map(localRecords.map(r => [r.date, r]));
+    const toWrite = [...merged.values()].filter(e => {
+        const rec = localByDate.get(e.date);
+        return !rec || normalizeEntry(rec)?.points !== e.points || Boolean(rec.synced) !== e.synced
+            || Boolean(rec.legacy) !== e.legacy;
+    });
+    await putActivityEntries(userId, toWrite).catch(err => console.warn('Could not cache history locally:', err));
+
+    const achievements = [...new Set([...(server?.achievements || []), ...(legacy?.achievements || [])])];
+    const recoveredCount = server ? [...merged.values()].filter(e => !e.synced).length : 0;
+
+    if (status === 'synced') {
+        const serverHas = new Set(server.achievements || []);
+        status = await syncDailyActivity(userId, token, achievements.filter(a => !serverHas.has(a)));
+    }
+
+    return {
+        entries: [...merged.values()],
+        achievements,
+        status,
+        recoveredCount: status === 'synced' ? recoveredCount : 0,
+    };
 }
 
-/**
- * Lazy-sync unsynced daily activity entries to the backend.
- * Returns fresh aggregated stats from the batch-sync response.
- *
- * @param {string} userId
- * @param {string} token — JWT auth token
- * @returns {Promise<{ synced: number, stats?: object } | null>}
- */
-export async function syncDailyActivity(userId, token) {
-    if (!userId || !token) return null;
-    if (typeof navigator !== 'undefined' && !navigator.onLine) return null;
-
-    try {
-        const unsynced = await getUnsyncedEntries(userId);
-        if (!unsynced || unsynced.length === 0) return { synced: 0 };
-
-        const entries = unsynced.map(e => ({
-            date: e.date,
-            puzzleType: e.puzzleType,
-            points: e.score,
-            timeSeconds: e.timeSeconds || 0,
-            hintsUsed: e.hintsUsed || 0,
-            noMistakes: e.noMistakes || false,
-        }));
-
-        const res = await fetch(`${API_URL}/stats/batch-sync`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`,
-            },
-            body: JSON.stringify({ entries }),
-        });
-
-        if (res.ok) {
-            const data = await res.json();
-            const syncedDates = unsynced.map(e => e.date);
-            await markEntriesSynced(userId, syncedDates);
-            return { synced: data.synced || syncedDates.length, stats: data.stats || null };
-        } else {
-            console.warn('Batch sync failed with status:', res.status);
-            return null;
-        }
-    } catch (err) {
-        console.warn('Lazy sync failed (offline?):', err);
-        return null;
-    }
+/** Delete all of this user's progress on the server ("Reset all progress"). */
+export async function deleteServerProgress(token) {
+    return api('/stats/me', token, { method: 'DELETE' }, WRITE_TIMEOUT_MS);
 }

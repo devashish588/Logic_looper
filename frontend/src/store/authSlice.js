@@ -22,6 +22,7 @@ const authSlice = createSlice({
         isAuthenticated: persisted.isAuthenticated,
         loading: false,
         error: null,
+        notice: null,   // informational message on the login page (e.g. session expired)
     },
     reducers: {
         setCredentials(state, action) {
@@ -30,6 +31,7 @@ const authSlice = createSlice({
             state.user = user;
             state.isAuthenticated = true;
             state.error = null;
+            state.notice = null;
             state.loading = false;
             localStorage.setItem('ll_token', token);
             localStorage.setItem('ll_user', JSON.stringify(user));
@@ -40,6 +42,20 @@ const authSlice = createSlice({
             state.isAuthenticated = false;
             state.error = null;
             state.loading = false;
+            localStorage.removeItem('ll_token');
+            localStorage.removeItem('ll_user');
+        },
+        /**
+         * Token rejected by the server. Signs out but keeps a message for the
+         * login page. Local progress is keyed by user id and is NOT deleted; it
+         * is merged and uploaded on the next login.
+         */
+        sessionExpired(state) {
+            state.token = null;
+            state.user = null;
+            state.isAuthenticated = false;
+            state.loading = false;
+            state.notice = 'Your session expired. Log in again to back up your progress; nothing on this device was lost.';
             localStorage.removeItem('ll_token');
             localStorage.removeItem('ll_user');
         },
@@ -56,5 +72,5 @@ const authSlice = createSlice({
     },
 });
 
-export const { setCredentials, logout, setLoading, setError, clearError } = authSlice.actions;
+export const { setCredentials, logout, sessionExpired, setLoading, setError, clearError } = authSlice.actions;
 export default authSlice.reducer;

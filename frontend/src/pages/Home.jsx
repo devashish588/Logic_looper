@@ -1,96 +1,44 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { useSelector, useDispatch } from 'react-redux';
+import React, { useEffect, useState } from 'react';
+import { useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { generatePuzzle, getTodayDateString, getPuzzleTypeForDate } from '../engine/generator.js';
-import { PUZZLE_LABELS, PUZZLE_DESCRIPTIONS } from '../utils/constants.js';
-import { PuzzleIcon, CheckCircle, Flame, Gem, Trophy, Zap, WifiOff } from '../components/Icons.jsx';
-import { fetchAggregatedStats } from '../utils/syncManager.js';
-import { loadStats } from '../store/statsSlice.js';
-import { saveAllState, loadAllState } from '../storage/db.js';
+import dayjs from 'dayjs';
+import { getTodayDateString, getPuzzleTypeForDate } from '../engine/generator.js';
+import { PUZZLE_TYPES, PUZZLE_LABELS, PUZZLE_DESCRIPTIONS } from '../utils/constants.js';
+import { PuzzleIcon, CheckCircle, Flame, Snowflake, CalendarDays, Dices, WifiOff } from '../components/Icons.jsx';
+import NextPuzzleCountdown from '../components/NextPuzzleCountdown.jsx';
 
 /**
- * useDashboardData — Unified data hook
- *
- * Priority order:
- * 1. Current Redux state (always shown immediately — may have local recordSolve data)
- * 2. IndexedDB local cache (loaded on mount for offline support)
- * 3. Backend aggregated stats (fetched if online — merged only if richer)
- *
- * Never overwrites local data with empty/less-complete backend data.
+ * Shows the "Local Mode" badge when the browser is offline. Progress is loaded once for the whole app
+ * (see App.jsx), so this page only reads it from the store. Solves are saved on this device either way
+ * and backed up as soon as the connection is back.
  */
-function useDashboardData() {
-    const dispatch = useDispatch();
-    const { user, token, isAuthenticated } = useSelector(s => s.auth);
-    const reduxStats = useSelector(s => s.stats);
-    const userId = user?.id;
-
-    const [isOffline, setIsOffline] = useState(!navigator.onLine);
-
-    // Online/offline detection
+function useOnlineStatus() {
+    const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
     useEffect(() => {
-        const goOnline = () => setIsOffline(false);
-        const goOffline = () => setIsOffline(true);
-        window.addEventListener('online', goOnline);
-        window.addEventListener('offline', goOffline);
+        const up = () => setOnline(true);
+        const down = () => setOnline(false);
+        window.addEventListener('online', up);
+        window.addEventListener('offline', down);
         return () => {
-            window.removeEventListener('online', goOnline);
-            window.removeEventListener('offline', goOffline);
+            window.removeEventListener('online', up);
+            window.removeEventListener('offline', down);
         };
     }, []);
-
-    // Load data: IndexedDB first, then backend merge
-    useEffect(() => {
-        if (!userId || !isAuthenticated) return;
-        let cancelled = false;
-
-        async function loadData() {
-            // 1. Try loading from IndexedDB (instant, works offline)
-            try {
-                const saved = await loadAllState(userId);
-                if (saved.stats && saved.stats.totalSolved > 0 && !cancelled) {
-                    // Only merge if local IndexedDB has more data than current Redux
-                    const current = window.__REDUX_STORE__?.getState()?.stats;
-                    if (!current || saved.stats.totalSolved >= (current.totalSolved || 0)) {
-                        dispatch(loadStats(saved.stats));
-                    }
-                }
-            } catch { }
-
-            // 2. Try fetching from backend (if online)
-            if (navigator.onLine && token) {
-                try {
-                    const serverStats = await fetchAggregatedStats(userId, token);
-                    if (serverStats && !cancelled) {
-                        const current = window.__REDUX_STORE__?.getState()?.stats;
-                        // Only use server data if it has MORE or EQUAL solved count
-                        // This prevents overwriting local solves that haven't synced yet
-                        if (serverStats.totalSolved >= (current?.totalSolved || 0)) {
-                            dispatch(loadStats(serverStats));
-                            await saveAllState(userId, serverStats, window.__REDUX_STORE__?.getState()?.settings);
-                        }
-                    }
-                } catch (err) {
-                    console.warn('Backend fetch failed (using local data):', err);
-                }
-            }
-        }
-
-        loadData();
-        return () => { cancelled = true; };
-    }, [userId, isAuthenticated, token, dispatch]);
-
-    return {
-        stats: reduxStats,
-        isOffline,
-    };
+    return online;
 }
 
 export default function Home() {
-    const { stats, isOffline } = useDashboardData();
+    const stats = useSelector(state => state.stats);
+    const isOffline = !useOnlineStatus();
     const todayDate = getTodayDateString();
     const puzzleType = getPuzzleTypeForDate(todayDate);
-    const alreadySolved = stats.heatmapData?.[todayDate] > 0;
+    const todaysEntry = stats.history[todayDate];
+    const alreadySolved = Boolean(todaysEntry);
+    const streakAtRisk = stats.hydrated && !alreadySolved && stats.currentStreak > 0;
+    // A freeze covered a missed day in the last couple of days: tell the player.
+    const recentFreeze = [...stats.frozenDates].reverse()
+        .find(d => dayjs(todayDate).diff(dayjs(d), 'day') <= 2);
 
     return (
         <div>
@@ -119,9 +67,19 @@ export default function Home() {
                     Train Your <span className="text-gradient">Logic</span> Daily
                 </h1>
                 <p className="home-hero-subtitle">
-                    5 rotating puzzle types. One new challenge every day. Keep the streak alive.
+                    {PUZZLE_TYPES.length} different puzzle types. One new challenge every day. Keep the streak alive.
                 </p>
             </motion.div>
+
+            {recentFreeze && stats.currentStreak > 0 && (
+                <div className="freeze-banner" role="status">
+                    <Snowflake size={18} strokeWidth={1.5} />
+                    <span>
+                        A streak freeze covered {dayjs(recentFreeze).format('dddd, MMM D')} and saved
+                        your {stats.currentStreak}-day streak.
+                    </span>
+                </div>
+            )}
 
             <motion.div
                 className="home-today-card"
@@ -140,21 +98,42 @@ export default function Home() {
                 <div className="home-puzzle-name">{PUZZLE_LABELS[puzzleType]}</div>
                 <p className="home-puzzle-desc">{PUZZLE_DESCRIPTIONS[puzzleType]}</p>
 
-                {alreadySolved ? (
+                {!stats.hydrated ? (
+                    <p className="text-muted">Loading your progress…</p>
+                ) : alreadySolved ? (
                     <div style={{ textAlign: 'center' }}>
                         <div style={{ fontSize: '1.2rem', marginBottom: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
-                            <CheckCircle size={20} strokeWidth={1.5} /> Challenge Complete
+                            <CheckCircle size={20} strokeWidth={1.5} /> Challenge Complete · {todaysEntry.points} pts
                         </div>
-                        <p className="text-muted" style={{ fontSize: '0.85rem' }}>Come back tomorrow for a new puzzle</p>
+                        <NextPuzzleCountdown />
+                        <Link to="/practice" className="btn btn-secondary" style={{ marginTop: '12px' }}>
+                            <CalendarDays size={16} strokeWidth={1.5} /> Practice past puzzles
+                        </Link>
                     </div>
                 ) : (
-                    <Link to="/play" className="btn btn-primary btn-lg">
-                        Start Today's Challenge
-                    </Link>
+                    <>
+                        {streakAtRisk && (
+                            <p className="streak-risk">
+                                <Flame size={16} strokeWidth={1.5} />
+                                Solve today to keep your {stats.currentStreak}-day streak
+                            </p>
+                        )}
+                        <Link to="/play" className="btn btn-primary btn-lg">
+                            Start Today's Challenge
+                        </Link>
+                    </>
                 )}
             </motion.div>
 
-            {/* Quick Stats — always shows current Redux values */}
+            <Link to="/free" className="home-free-link">
+                <Dices size={18} strokeWidth={1.5} />
+                <span>
+                    <strong>Free Play</strong>
+                    <span className="text-muted"> · {PUZZLE_TYPES.length} games, unlimited puzzles, any difficulty</span>
+                </span>
+            </Link>
+
+            {/* Quick Stats */}
             <motion.div
                 className="home-quick-stats"
                 initial={{ opacity: 0 }}
@@ -179,6 +158,17 @@ export default function Home() {
                 <div className="quick-stat">
                     <div className="quick-stat-value">{stats.longestStreak}</div>
                     <div className="quick-stat-label">Best Streak</div>
+                </div>
+                <div
+                    className="quick-stat"
+                    title={stats.nextFreezeIn
+                        ? `Next freeze in ${stats.nextFreezeIn} solve${stats.nextFreezeIn === 1 ? '' : 's'}`
+                        : 'Freeze bank full'}
+                >
+                    <div className="quick-stat-value" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <Snowflake size={20} strokeWidth={1.5} /> {stats.freezesAvailable}/2
+                    </div>
+                    <div className="quick-stat-label">Streak Freezes</div>
                 </div>
             </motion.div>
         </div>

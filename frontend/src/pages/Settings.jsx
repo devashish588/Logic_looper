@@ -1,9 +1,13 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { motion } from 'framer-motion';
 import { toggleTheme, toggleTimer, toggleSound } from '../store/settingsSlice.js';
-import { resetStats } from '../store/statsSlice.js';
-import { saveState } from '../storage/db.js';
+import { setHistory, setSyncStatus } from '../store/statsSlice.js';
+import { resetGame } from '../store/gameSlice.js';
+import { clearLegacyStats } from '../storage/db.js';
+import { clearDailyActivity } from '../storage/activityStore.js';
+import { deleteServerProgress } from '../utils/syncManager.js';
+import { PUZZLE_TYPES } from '../utils/constants.js';
 import {
     Settings as SettingsIcon,
     Moon,
@@ -16,19 +20,30 @@ import {
 export default function Settings() {
     const dispatch = useDispatch();
     const settings = useSelector(state => state.settings);
+    const { user, token } = useSelector(state => state.auth);
+    const [resetError, setResetError] = useState(null);
+    const [resetting, setResetting] = useState(false);
 
-    const handleToggle = (action) => {
-        dispatch(action());
-        setTimeout(async () => {
-            const state = window.__REDUX_STORE__?.getState();
-            if (state) await saveState('settings', state.settings);
-        }, 100);
-    };
+    // Settings are persisted per user by App whenever they change.
+    const handleToggle = (action) => dispatch(action());
 
-    const handleReset = () => {
-        if (confirm('Are you sure you want to reset all progress? This cannot be undone.')) {
-            dispatch(resetStats());
-            saveState('stats', null);
+    // Before v1.1 this only cleared the screen; the data came back on reload.
+    // Now it deletes progress on the server first, then on this device.
+    const handleReset = async () => {
+        if (!confirm('Reset all progress? This deletes your streaks, history and badges on every device. It cannot be undone.')) return;
+        setResetting(true);
+        setResetError(null);
+        try {
+            await deleteServerProgress(token);
+            await clearDailyActivity(user.id);
+            await clearLegacyStats(user.id);
+            dispatch(resetGame());
+            dispatch(setHistory({ entries: [], achievements: [] }));
+            dispatch(setSyncStatus('synced'));
+        } catch {
+            setResetError('Could not reach the server, so nothing was deleted. Try again when you are online.');
+        } finally {
+            setResetting(false);
         }
     };
 
@@ -129,10 +144,11 @@ export default function Settings() {
                             <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>Reset All Progress</div>
                             <div className="text-muted" style={{ fontSize: '0.8rem' }}>Delete all stats, streaks, and achievements</div>
                         </div>
-                        <button className="btn btn-danger btn-sm" onClick={handleReset}>
-                            Reset
+                        <button className="btn btn-danger btn-sm" onClick={handleReset} disabled={resetting}>
+                            {resetting ? 'Resetting…' : 'Reset'}
                         </button>
                     </div>
+                    {resetError && <p className="play-notice" style={{ marginTop: '12px' }}>{resetError}</p>}
                 </div>
             </motion.div>
 
@@ -148,12 +164,13 @@ export default function Settings() {
                 </div>
                 <div className="card">
                     <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                        <strong>Logic Looper</strong> — A daily puzzle game with 5 rotating logic challenge types.
-                        Sharpen your reasoning with Number Matrices, Pattern Matching, Sequence Solving,
-                        Deduction Grids, and Binary Logic circuits.
+                        <strong>Logic Looper</strong> — A daily puzzle game with {PUZZLE_TYPES.length} puzzle types. Sharpen
+                        your reasoning with Number Matrices, Sequence Solving, Deduction Grids, Binary Logic
+                        circuits, Switchboards, Laser Paths, Measuring jugs, Balance Scales, Pixel Logic,
+                        Number Trails and a daily word, Letter Lock.
                     </p>
                     <p className="text-muted mt-8" style={{ fontSize: '0.8rem' }}>
-                        Version 1.0.0 • Built with React + Vite
+                        Version 1.4.0 • Built with React + Vite
                     </p>
                 </div>
             </motion.div>

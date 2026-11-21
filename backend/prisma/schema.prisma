@@ -14,6 +14,8 @@ model User {
   email       String?  @unique
   password    String?
   avatarUrl   String?
+  googleId     String?  @unique  // exists in the database; kept so `db push` never drops it
+  truecallerId String?  @unique
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -51,11 +53,15 @@ model DailyScore {
   points     Int
   timeSeconds Int
   hintsUsed  Int      @default(0)
+  mistakes   Int      @default(0)        // wrong submissions before solving
   noMistakes Boolean  @default(false)
+  legacy     Boolean  @default(false)    // recovered from old score-only data; time/hints unknown
+  solvedAt   DateTime?                   // client timestamp of the solve
 
   createdAt  DateTime @default(now())
 
   @@unique([userId, date])
   @@index([date])
   @@index([points])
+  @@index([userId])
 }
