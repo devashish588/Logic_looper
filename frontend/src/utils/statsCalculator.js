@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
 import { PUZZLE_TYPES, HISTORY_PUZZLE_TYPES, ACHIEVEMENTS } from './constants.js';
 import { calculateStreaks } from './streakCalculator.js';
-import { getPuzzleTypeForDate } from '../engine/generator.js';
+import { getHistoricalTypeForDate } from '../engine/generator.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const ACHIEVEMENT_IDS = new Set(ACHIEVEMENTS.map(a => a.id));
@@ -30,7 +30,7 @@ export function normalizeEntry(raw) {
         points,
         // Puzzle type is deterministic from the date, so it can be rebuilt for legacy data.
         // History may hold retired types (e.g. Pattern Match): keep them as recorded
-        puzzleType: HISTORY_PUZZLE_TYPES.includes(raw.puzzleType) ? raw.puzzleType : getPuzzleTypeForDate(raw.date),
+        puzzleType: HISTORY_PUZZLE_TYPES.includes(raw.puzzleType) ? raw.puzzleType : getHistoricalTypeForDate(raw.date),
         timeSeconds: legacy ? 0 : toInt(raw.timeSeconds),
         hintsUsed: legacy ? 0 : toInt(raw.hintsUsed),
         mistakes: legacy ? 0 : toInt(raw.mistakes),

@@ -2,7 +2,6 @@ import dayjs from 'dayjs';
 import dayOfYear from 'dayjs/plugin/dayOfYear.js';
 import { createRng } from '../utils/seededRng.js';
 import * as numberMatrix from './types/numberMatrix.js';
-import * as patternMatch from './types/patternMatch.js';
 import * as sequenceSolver from './types/sequenceSolver.js';
 import * as deductionGrid from './types/deductionGrid.js';
 import * as binaryLogic from './types/binaryLogic.js';
@@ -18,7 +17,6 @@ dayjs.extend(dayOfYear);
 
 export const generators = {
     numberMatrix,
-    patternMatch, // retired: only used for dates before V2_START
     sequenceSolver,
     deductionGrid,
     binaryLogic,
@@ -41,9 +39,12 @@ export const generators = {
  */
 export const V2_START = '2026-12-01';
 
-// Before V2_START the rotation is exactly what was deployed (Pattern Match included), so every past
-// day replays the puzzle type players actually saw. Pattern Match is retired from V2_ROTATION onward.
-const LEGACY_ROTATION = ['numberMatrix', 'patternMatch', 'sequenceSolver', 'deductionGrid', 'binaryLogic'];
+// Pattern Match has been removed. Before V2_START the rotation is what was deployed, except that the
+// Pattern Match slot now plays Deduction Grid, so every other past day still shows exactly the puzzle
+// players saw. (The slot is not adjacent to a Deduction Grid day, so no game appears twice in a row.)
+const DEPLOYED_ROTATION = ['numberMatrix', 'patternMatch', 'sequenceSolver', 'deductionGrid', 'binaryLogic'];
+const REPLACES_PATTERN_MATCH = 'deductionGrid';
+const LEGACY_ROTATION = DEPLOYED_ROTATION.map(t => (t === 'patternMatch' ? REPLACES_PATTERN_MATCH : t));
 
 // Old and new types interleaved, so similar puzzles don't land back to back.
 // 10 types over 7-day weeks: each type keeps landing on different weekdays.
@@ -74,6 +75,16 @@ const daysSinceV2 = (dateString) =>
 export function getPuzzleTypeForDate(dateString) {
     if (isV2(dateString)) return V2_ROTATION[daysSinceV2(dateString) % V2_ROTATION.length];
     return LEGACY_ROTATION[dayjs(dateString).dayOfYear() % LEGACY_ROTATION.length];
+}
+
+/**
+ * The game a player was actually shown on that day on the deployed site. Only used to LABEL saved
+ * history (a day recovered from old data has no recorded type), so a former Pattern Match day still
+ * reads "Pattern Match" in stats and tooltips even though that game can no longer be played.
+ */
+export function getHistoricalTypeForDate(dateString) {
+    if (isV2(dateString)) return getPuzzleTypeForDate(dateString);
+    return DEPLOYED_ROTATION[dayjs(dateString).dayOfYear() % DEPLOYED_ROTATION.length];
 }
 
 export function getDifficultyForDate(dateString) {

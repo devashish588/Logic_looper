@@ -157,9 +157,9 @@ export function hasAnyAnswer(puzzle, userAnswer) {
  * there is nothing left to reveal. Used as deployed, so these games look and feel the same.
  *
  * @param {object} puzzle
- * @param {{ userAnswer?: any, currentRound?: number, hintsUsed?: number }} ctx
+ * @param {{ userAnswer?: any }} ctx
  */
-export function computeRevealHint(puzzle, { userAnswer, currentRound = 0, hintsUsed = 0 } = {}) {
+export function computeRevealHint(puzzle, { userAnswer } = {}) {
     switch (puzzle?.type) {
         case 'numberMatrix': {
             const userGrid = userAnswer || puzzle.puzzle;
@@ -208,17 +208,10 @@ export function computeRevealHint(puzzle, { userAnswer, currentRound = 0, hintsU
             }
             return null;
         }
-        case 'patternMatch': {
-            const round = puzzle.rounds[currentRound];
-            if (!round) return null;
-            const wrongIndices = round.options.map((_, i) => i).filter(i => i !== round.answerIndex);
-            if (!wrongIndices.length) return null;
-            return { type: 'eliminate', eliminateIndex: wrongIndices[hintsUsed % wrongIndices.length], round: currentRound };
-        }
         default:
             return null;
     }
 }
 
 /** The original games, whose hints reveal a value on the board (see computeRevealHint). */
-export const REVEAL_HINT_TYPES = new Set(['numberMatrix', 'patternMatch', 'sequenceSolver', 'deductionGrid', 'binaryLogic']);
+export const REVEAL_HINT_TYPES = new Set(['numberMatrix', 'sequenceSolver', 'deductionGrid', 'binaryLogic']);

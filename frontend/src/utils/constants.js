@@ -13,8 +13,8 @@ export const PUZZLE_TYPES = [
     'letterLock',
 ];
 
-// Retired from the daily rotation and Free Play, but players have solved these on past days, so they
-// still replay from the archive and still count in history, stats and tooltips.
+// Removed games. They can no longer be played, but players solved them on past days, so saved history
+// keeps the name and still counts in stats and tooltips (and the server keeps accepting those days).
 export const RETIRED_PUZZLE_TYPES = ['patternMatch'];
 
 // Every type that can appear in a player's history.
@@ -37,7 +37,6 @@ export const PUZZLE_LABELS = {
 
 export const PUZZLE_ICON_KEYS = {
     numberMatrix: 'hash',
-    patternMatch: 'palette',
     sequenceSolver: 'link',
     deductionGrid: 'puzzle',
     binaryLogic: 'zap',
@@ -52,7 +51,6 @@ export const PUZZLE_ICON_KEYS = {
 
 export const PUZZLE_DESCRIPTIONS = {
     numberMatrix: 'Fill the grid so every row and column has unique numbers',
-    patternMatch: 'Find the next pattern in the sequence',
     sequenceSolver: 'Discover the rule and fill in missing numbers',
     deductionGrid: 'Use clues to deduce who owns what',
     binaryLogic: 'Trace the logic gates to find the outputs',
@@ -82,19 +80,6 @@ export const PUZZLE_RULES = {
             'Start with rows/columns that have the most given numbers',
             'Look for numbers that can only go in one place',
             'Use elimination: cross off impossible values mentally',
-        ],
-    },
-    patternMatch: {
-        rules: [
-            'Observe the sequence of shapes, colors, and rotations',
-            'Identify the repeating or transforming pattern',
-            'Select the shape that continues the pattern',
-            'Each round presents a new pattern to solve',
-        ],
-        tips: [
-            'Focus on one attribute at a time (shape, color, rotation)',
-            'Count the period — how many items before the pattern repeats',
-            'Watch for transformation patterns: gradual rotation or color shifting',
         ],
     },
     sequenceSolver: {

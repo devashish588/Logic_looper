@@ -1,5 +1,21 @@
 # Changelog
 
+## Pattern Match removed
+
+The Pattern Match game is gone: its engine, screen, hints, rules text and styles are deleted, and it is
+no longer in the daily rotation or Free Play.
+
+- **Past days.** A day that used to be a Pattern Match day now plays **Deduction Grid** when replayed from
+  the archive, and today's puzzle on those days (until the new rotation starts) is Deduction Grid too.
+  Every other past day is still identical to what the deployed site generated (1,677 date and difficulty
+  combinations checked). The replacement is never next to another Deduction Grid day, so no game appears
+  twice in a row.
+- **Saved history is untouched.** Days a player already solved as Pattern Match keep that name. Stats
+  shows them as "Pattern Match (retired)", days recovered from old data are labelled with the game the
+  player was actually shown, and the server still accepts those days (rejecting them would have silently
+  dropped them when a player's history is restored).
+- Removed the now-unused multi-round state (`currentRound`, `nextRound`) from the game store.
+
 ## Merged onto the deployed codebase
 
 This work was first built on the original February history. GitHub's `main` had since diverged (Google
@@ -16,14 +32,8 @@ what changed is listed here.
   each wrong submission costs 10 points, and the larger new games get a time allowance first.
 - The hint that **reveals a value on the board** for the original games, the redesigned shell (desktop
   header, mobile bottom tab bar, immersive play mode), and the deployed heatmap (calendar-year view).
-- Every past day generates **exactly the puzzle the deployed site generates**: checked for 2,097
-  (date, difficulty) combinations, Pattern Match days included.
-
-### Pattern Match is retired, not erased
-It is no longer in the daily rotation from `V2_START` onward, nor in Free Play, but past days that used it
-still replay in the archive, and the server and the history/stats keep accepting its solves. Deleting it
-outright would have changed which puzzle every past day shows and silently dropped those days from a
-player's restored history.
+- Every past day generates **exactly the puzzle the deployed site generates**, except days that used
+  Pattern Match (see "Pattern Match removed" at the top).
 
 ### Problems found while merging, now fixed
 - **A player's 150-day upload hung the server.** New days were saved one database statement at a time, so
@@ -34,8 +44,6 @@ player's restored history.
   the app carries on with what is saved on the device.
 - **Number Matrix could never be solved** after the merge until `checkPuzzle` was corrected: the deployed
   validator takes the whole puzzle, not just the solution grid.
-- **Pattern Match hints leaked into other rounds** (a hint used in round 1 could grey out the correct
-  answer in round 3). A hint now only applies to its own round.
 - **The Stats heatmap overflowed phone screens** (360 px wide); its columns can now shrink to fit.
 - Google sign-in now matches emails case-insensitively, like password login, so one person can't end up
   with two accounts.
